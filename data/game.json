@@ -1,0 +1,24 @@
+{
+  "version": "0.1.0",
+  "title": "Calamari Damacy",
+  "tuning": {
+    "pushForce": 22,
+    "baseMass": 1.4,
+    "massPerRadius": 3.2,
+    "sizeSpeedGain": 0.08,
+    "rollingFriction": 0.7,
+    "airDrag": 0.055,
+    "wallBounce": 0.4,
+    "pickupRatio": 0.72,
+    "growthPerMass": 0.045,
+    "meltDuration": 20,
+    "protrusionInertia": 1.6,
+    "scrapeFriction": 0.1,
+    "bonkRestitution": 0.55,
+    "objectFriction": 2.8,
+    "cameraDistance": 8,
+    "cameraHeight": 4.5,
+    "cameraLerp": 4
+  },
+  "notes": "Scrape is per stuck object and fades as it melts/sinks; 0 after melt completes and the object is removed."
+}

@@ -1,0 +1,22 @@
+import { test, expect } from '@playwright/test';
+
+test.describe('calamari damacy smoke', () => {
+  test('title screen loads', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.brand')).toHaveText('Calamari Damacy');
+    await expect(page.locator('#btn-play')).toBeVisible();
+  });
+
+  test('start rolling enters play HUD', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('#btn-play').click();
+    await expect(page.locator('#hud')).toBeVisible();
+    await expect(page.locator('#title-screen')).toBeHidden();
+    await expect(page.locator('#hud-size-value')).toBeVisible();
+  });
+
+  test('dev panel with ?dev=1', async ({ page }) => {
+    await page.goto('/?dev=1');
+    await expect(page.locator('#dev-panel')).toBeVisible({ timeout: 15_000 });
+  });
+});

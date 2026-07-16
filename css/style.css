@@ -1,0 +1,233 @@
+:root {
+  --sea-deep: #0a3d5c;
+  --sea-mid: #1a6b8a;
+  --sea-foam: #7ec8c8;
+  --coral: #ff6b6b;
+  --ink: #0d2137;
+  --cream: #f0f7fa;
+  --accent: #ffd166;
+  --panel: rgba(10, 40, 60, 0.82);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--sea-deep);
+  font-family: 'Nunito', system-ui, sans-serif;
+  color: var(--cream);
+}
+
+#game-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* —— HUD —— */
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1rem 1.25rem;
+  gap: 1rem;
+}
+
+.hud-size,
+.hud-timer {
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  padding: 0.65rem 1rem;
+  min-width: 7rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.hud-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+  margin-bottom: 0.15rem;
+}
+
+#hud-size-value,
+#hud-timer-value {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.hud-goal {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--accent);
+  margin-top: 0.2rem;
+}
+
+.hud-hint {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+/* —— Overlays —— */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 35%, rgba(126, 200, 200, 0.35), transparent 55%),
+    linear-gradient(165deg, #0a4a6e 0%, #062838 45%, #0d2137 100%);
+  padding: 1.5rem;
+}
+
+.overlay-panel {
+  text-align: center;
+  max-width: 28rem;
+}
+
+.overlay-panel.compact {
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.eyebrow {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 0.95rem;
+  color: var(--sea-foam);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0 0 0.5rem;
+}
+
+.brand {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.4rem, 8vw, 3.6rem);
+  line-height: 1.05;
+  margin: 0 0 0.75rem;
+  color: var(--cream);
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.2),
+    0 0 40px rgba(126, 200, 200, 0.4);
+}
+
+.tagline {
+  font-size: 1.05rem;
+  line-height: 1.45;
+  opacity: 0.9;
+  margin: 0 0 1.5rem;
+}
+
+.controls-blurb {
+  margin: 1.25rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.55;
+}
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.btn {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
+  font-size: 1.05rem;
+  padding: 0.7rem 1.4rem;
+  border: 2px solid rgba(240, 247, 250, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cream);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--cream);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn.primary {
+  background: var(--coral);
+  border-color: var(--coral);
+  color: #fff;
+  box-shadow: 0 6px 0 #c44a4a;
+}
+
+.btn.primary:hover {
+  background: #ff7f7f;
+  border-color: #ff7f7f;
+}
+
+.btn.primary:active {
+  box-shadow: 0 2px 0 #c44a4a;
+  transform: translateY(4px);
+}
+
+.result-stats {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 1.15rem;
+  color: var(--accent);
+  margin: -0.5rem 0 1.5rem;
+}
+
+#result-title {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 2.2rem;
+  margin: 0 0 0.5rem;
+}
+
+@media (max-width: 480px) {
+  .hud-hint {
+    font-size: 0.7rem;
+  }
+
+  .hud-top {
+    padding: 0.75rem;
+  }
+}

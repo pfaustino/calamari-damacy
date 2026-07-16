@@ -1,0 +1,10 @@
+{
+  "id": "tide-pool-1",
+  "name": "Tide Pool",
+  "timeLimit": 180,
+  "goalCm": 50,
+  "startRadius": 0.45,
+  "floorSize": 80,
+  "spawnCount": 1100,
+  "seed": 4242
+}

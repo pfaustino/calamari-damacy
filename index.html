@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calamari Damacy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@600;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="game-root">
+    <canvas id="game-canvas"></canvas>
+
+    <div id="hud" class="hidden" aria-live="polite">
+      <div class="hud-top">
+        <div class="hud-size">
+          <span class="hud-label">Size</span>
+          <span id="hud-size-value">0 cm</span>
+          <span id="hud-size-goal" class="hud-goal"></span>
+        </div>
+        <div class="hud-timer">
+          <span class="hud-label">Time</span>
+          <span id="hud-timer-value">3:00</span>
+        </div>
+      </div>
+      <div class="hud-hint">WASD / arrows to roll · Esc pause</div>
+    </div>
+
+    <div id="title-screen" class="overlay">
+      <div class="overlay-panel">
+        <p class="eyebrow">We ♡ Rolling</p>
+        <h1 class="brand">Calamari Damacy</h1>
+        <p class="tagline">Roll up the ocean floor. Grow your sticky squid-ball. Make the King of the Cosmos proud.</p>
+        <div class="cta-row">
+          <button type="button" id="btn-play" class="btn primary">Start Rolling</button>
+        </div>
+        <p class="controls-blurb">WASD or arrow keys · collect anything smaller than you</p>
+      </div>
+    </div>
+
+    <div id="pause-screen" class="overlay hidden">
+      <div class="overlay-panel compact">
+        <h2>Paused</h2>
+        <div class="cta-row">
+          <button type="button" id="btn-resume" class="btn primary">Resume</button>
+          <button type="button" id="btn-quit" class="btn">Quit to Title</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="result-screen" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2 id="result-title">Fantastic!</h2>
+        <p id="result-message" class="tagline"></p>
+        <p id="result-stats" class="result-stats"></p>
+        <div class="cta-row">
+          <button type="button" id="btn-retry" class="btn primary">Roll Again</button>
+          <button type="button" id="btn-title" class="btn">Title</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

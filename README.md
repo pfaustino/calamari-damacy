@@ -15,10 +15,13 @@ Open http://localhost:5173 — click **Start Rolling**, then WASD / arrows to ro
 
 ## Core loop
 
-1. Start small on the tide-pool floor  
-2. Roll into anything **smaller than you** — it sticks and you grow  
-3. Reach the stage size goal before the timer hits zero  
+1. Pick a mission from **The Cosmos** (or Start Rolling)  
+2. Roll into anything **smaller than you** — it sticks and melts into volume  
+3. Hit the size goal before time runs out  
+4. **Present to the King** → your calamari becomes a star  
+5. Unlock the next stage  
 
+On failure: **Try Again** (same mission).
 ## Stack
 
 | Layer | Choice |

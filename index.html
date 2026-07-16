@@ -25,6 +25,7 @@
           <span id="hud-timer-value">3:00</span>
         </div>
       </div>
+      <div id="hud-stage-name" class="hud-stage"></div>
       <div class="hud-hint">WASD / arrows to roll · Esc pause</div>
     </div>
 
@@ -32,20 +33,54 @@
       <div class="overlay-panel">
         <p class="eyebrow">We ♡ Rolling</p>
         <h1 class="brand">Calamari Damacy</h1>
-        <p class="tagline">Roll up the ocean floor. Grow your sticky squid-ball. Make the King of the Cosmos proud.</p>
+        <p class="tagline">Roll up the ocean floor. Grow your sticky squid-ball. Hang new stars for the King of the Cosmos.</p>
         <div class="cta-row">
           <button type="button" id="btn-play" class="btn primary">Start Rolling</button>
+          <button type="button" id="btn-title-cosmos" class="btn">The Cosmos</button>
         </div>
         <p class="controls-blurb">WASD or arrow keys · collect anything smaller than you</p>
       </div>
     </div>
 
     <div id="pause-screen" class="overlay hidden">
-      <div class="overlay-panel compact">
+      <div id="pause-main" class="overlay-panel compact pause-panel">
         <h2>Paused</h2>
-        <div class="cta-row">
+        <div class="cta-col">
           <button type="button" id="btn-resume" class="btn primary">Resume</button>
+          <button type="button" id="btn-sound" class="btn">Sound</button>
+          <button type="button" id="btn-about" class="btn">About</button>
           <button type="button" id="btn-quit" class="btn">Quit to Title</button>
+        </div>
+      </div>
+
+      <div id="pause-sound" class="overlay-panel compact pause-panel hidden">
+        <h2>Sound</h2>
+        <div class="setting-row">
+          <label for="slider-music">Music</label>
+          <input type="range" id="slider-music" min="0" max="100" value="65" />
+          <span id="slider-music-val" class="setting-val">65%</span>
+        </div>
+        <div class="setting-row">
+          <label for="slider-sfx">Sound Effects</label>
+          <input type="range" id="slider-sfx" min="0" max="100" value="55" />
+          <span id="slider-sfx-val" class="setting-val">55%</span>
+        </div>
+        <div class="cta-row">
+          <button type="button" id="btn-sound-back" class="btn">Back</button>
+        </div>
+      </div>
+
+      <div id="pause-about" class="overlay-panel compact pause-panel hidden">
+        <h2>About</h2>
+        <div class="about-body">
+          <p><strong>Calamari Damacy</strong> — a sticky-ball roller inspired by Katamari Damacy.</p>
+          <p>Development: <strong>Patrick Faustino</strong> &amp; AI</p>
+          <p>Engine: Three.js · Bundler: Vite</p>
+          <p>Music: tracks from <a href="https://pixabay.com/" target="_blank" rel="noopener noreferrer">Pixabay</a> (Vintage Mouse Hunt, Vintage Piano, Vintage Jazz Coffee Shop, Vintage Comedy).</p>
+          <p class="about-note">Not affiliated with Bandai Namco or Katamari Damacy.</p>
+        </div>
+        <div class="cta-row">
+          <button type="button" id="btn-about-back" class="btn">Back</button>
         </div>
       </div>
     </div>
@@ -56,8 +91,36 @@
         <p id="result-message" class="tagline"></p>
         <p id="result-stats" class="result-stats"></p>
         <div class="cta-row">
-          <button type="button" id="btn-retry" class="btn primary">Roll Again</button>
+          <button type="button" id="btn-result-primary" class="btn primary">Present to the King</button>
           <button type="button" id="btn-title" class="btn">Title</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="present-screen" class="overlay cosmos-sky hidden">
+      <div class="sky-stars" aria-hidden="true"></div>
+      <div id="rising-star" class="rising-star" aria-hidden="true"></div>
+      <div class="overlay-panel present-panel">
+        <p class="eyebrow">The King of the Cosmos</p>
+        <h2 id="present-star-name">A new star!</h2>
+        <p id="present-message" class="tagline"></p>
+        <p id="present-stats" class="result-stats"></p>
+        <div class="cta-row">
+          <button type="button" id="btn-view-cosmos" class="btn primary">View the Cosmos</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="cosmos-screen" class="overlay cosmos-sky hidden">
+      <div class="sky-stars" aria-hidden="true"></div>
+      <div class="overlay-panel cosmos-panel">
+        <p class="eyebrow">Night Sky</p>
+        <h2 class="brand cosmos-brand">The Cosmos</h2>
+        <p class="tagline cosmos-tagline">Each clear hangs a star. Choose your next mission.</p>
+        <div id="hung-stars" class="hung-stars" aria-label="Stars you have hung"></div>
+        <div id="stage-list" class="stage-list"></div>
+        <div class="cta-row">
+          <button type="button" id="btn-cosmos-title" class="btn">Title</button>
         </div>
       </div>
     </div>

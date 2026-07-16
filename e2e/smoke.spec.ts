@@ -15,6 +15,13 @@ test.describe('calamari damacy smoke', () => {
     await expect(page.locator('#hud-size-value')).toBeVisible();
   });
 
+  test('cosmos screen opens from title', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('#btn-title-cosmos').click();
+    await expect(page.locator('#cosmos-screen')).toBeVisible();
+    await expect(page.locator('#stage-list .stage-card').first()).toBeVisible();
+  });
+
   test('dev panel with ?dev=1', async ({ page }) => {
     await page.goto('/?dev=1');
     await expect(page.locator('#dev-panel')).toBeVisible({ timeout: 15_000 });

@@ -121,8 +121,9 @@ export class Collectibles {
   _resolveBall(ball) {
     const maxPick = ball.pickupSize;
     const br = ball.radius;
-    const mBall = Math.max(0.2, ball.mass);
+    const mBall = Math.max(0.25, ball.collisionMass);
     const e = this.game.tuning.bonkRestitution ?? 0.55;
+    const objScale = this.game.tuning.objectCollisionScale ?? 3.5;
 
     for (let i = this.items.length - 1; i >= 0; i--) {
       const item = this.items[i];
@@ -146,7 +147,7 @@ export class Collectibles {
         continue;
       }
 
-      // Too big → bonk (mass-weighted impulse)
+      // Too big → bonk (objects feel planted; ball is not an unstoppable plow)
       let dist = Math.sqrt(distSq);
       if (dist < 1e-5) {
         const a = Math.random() * Math.PI * 2;
@@ -157,7 +158,7 @@ export class Collectibles {
       const nx = dx / dist;
       const nz = dz / dist;
 
-      const mObj = Math.max(0.15, item.type.mass);
+      const mObj = Math.max(0.5, item.type.mass * objScale + item.type.size * 1.2);
       const invSum = 1 / mBall + 1 / mObj;
 
       // Positional separation (lighter body moves more)

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import gameData from '../../data/game.json';
-import stageData from '../../data/stage.json';
+import stagesData from '../../data/stages.json';
 import objectsData from '../../data/objects.json';
 import { Input } from './Input.js';
 import { World } from './World.js';
@@ -9,9 +9,15 @@ import { Collectibles } from './Collectibles.js';
 import { FollowCamera } from './FollowCamera.js';
 import { UI } from './UI.js';
 import { AudioManager } from './AudioManager.js';
+import {
+  loadProgress,
+  recordClear,
+  isStageUnlocked,
+  clearProgress,
+} from './Progress.js';
 import { initDevPanel } from '../dev/DevPanel.js';
 
-/** @typedef {'title' | 'playing' | 'paused' | 'result'} GameState */
+/** @typedef {'title' | 'playing' | 'paused' | 'result' | 'present' | 'cosmos'} GameState */
 
 /**
  * Thin orchestrator — wires systems and owns the state machine.
@@ -20,8 +26,11 @@ export class Game {
   constructor() {
     this.state = /** @type {GameState} */ ('title');
     this.tuning = null;
+    this.stages = [];
     this.stage = null;
     this.objectTypes = [];
+    this.progress = loadProgress();
+    this._lastResult = null;
 
     this.scene = null;
     this.camera = null;
@@ -39,33 +48,37 @@ export class Game {
     this.timeLeft = 0;
     this._escWasDown = false;
     this._raf = 0;
+    this._worldBuilt = false;
   }
 
   init() {
     this.tuning = gameData.tuning;
-    this.stage = stageData;
+    this.stages = stagesData.stages;
+    this.stage = this.stages[0];
     this.objectTypes = objectsData.types;
 
     this.setupRenderer();
     this.setupScene();
     this.input.init();
     this.world = new World(this);
-    this.world.init();
     this.collectibles = new Collectibles(this);
     this.followCam = new FollowCamera(this);
     this.audio.init();
 
     this.bindUi();
+    this.ui.syncSoundSliders(this.audio.getMusicVolumePct(), this.audio.getSfxVolumePct());
     this.ui.showTitle();
 
     initDevPanel({
       getStatus: () =>
-        `${this.state} · ${this.ball?.diameterCm ?? 0}cm · ${this.collectibles?.items.length ?? 0} left`,
+        `${this.state} · ${this.stage?.id ?? '-'} · ${this.ball?.diameterCm ?? 0}cm`,
       actions: [
         { label: 'Win now', fn: () => this.endStage(true) },
         { label: 'Grow +10cm', fn: () => this.devGrow(10) },
         { label: 'Skip 30s', fn: () => { this.timeLeft = Math.max(0, this.timeLeft - 30); } },
-        { label: 'Restart stage', fn: () => this.startStage() },
+        { label: 'Restart stage', fn: () => this.startStage(this.stage.id) },
+        { label: 'Clear progress', fn: () => { clearProgress(); this.progress = loadProgress(); this.showCosmos(); } },
+        { label: 'Cosmos', fn: () => this.showCosmos() },
       ],
     });
 
@@ -93,21 +106,75 @@ export class Game {
     this.camera.position.set(0, 8, 12);
   }
 
+  /** Build floor/lights once using the largest arena among stages. */
+  ensureWorld() {
+    if (this._worldBuilt) return;
+    const maxFloor = Math.max(...this.stages.map((s) => s.floorSize));
+    const prev = this.stage;
+    this.stage = { ...prev, floorSize: maxFloor };
+    this.world.init();
+    this.stage = prev;
+    this._worldBuilt = true;
+  }
+
   bindUi() {
     document.getElementById('btn-play').addEventListener('click', () => {
       this.audio.unlockAndPlay();
-      this.startStage();
+      const next = this.stages.find((s) => isStageUnlocked(this.stages, this.progress, s.id)
+        && !this.progress.completed.includes(s.id))
+        ?? this.stages[0];
+      this.startStage(next.id);
+    });
+    document.getElementById('btn-title-cosmos').addEventListener('click', () => {
+      this.audio.unlockAndPlay();
+      this.showCosmos();
     });
     document.getElementById('btn-resume').addEventListener('click', () => this.resume());
     document.getElementById('btn-quit').addEventListener('click', () => this.toTitle());
-    document.getElementById('btn-retry').addEventListener('click', () => {
-      this.audio.unlockAndPlay();
-      this.startStage();
+    document.getElementById('btn-sound').addEventListener('click', () => {
+      this.ui.syncSoundSliders(this.audio.getMusicVolumePct(), this.audio.getSfxVolumePct());
+      this.ui.showPausePanel('sound');
+    });
+    document.getElementById('btn-about').addEventListener('click', () => {
+      this.ui.showPausePanel('about');
+    });
+    document.getElementById('btn-sound-back').addEventListener('click', () => {
+      this.ui.showPausePanel('main');
+    });
+    document.getElementById('btn-about-back').addEventListener('click', () => {
+      this.ui.showPausePanel('main');
+    });
+    document.getElementById('slider-music').addEventListener('input', (e) => {
+      const pct = Number(e.target.value);
+      this.audio.setMusicVolume(pct / 100);
+      document.getElementById('slider-music-val').textContent = `${pct}%`;
+    });
+    document.getElementById('slider-sfx').addEventListener('input', (e) => {
+      const pct = Number(e.target.value);
+      this.audio.setSfxVolume(pct / 100);
+      document.getElementById('slider-sfx-val').textContent = `${pct}%`;
+      // Preview click
+      this.audio.bonk(0.45);
+    });
+    document.getElementById('btn-result-primary').addEventListener('click', () => {
+      if (this._lastResult?.won) this.presentToKing();
+      else {
+        this.audio.unlockAndPlay();
+        this.startStage(this.stage.id);
+      }
     });
     document.getElementById('btn-title').addEventListener('click', () => this.toTitle());
+    document.getElementById('btn-view-cosmos').addEventListener('click', () => this.showCosmos());
+    document.getElementById('btn-cosmos-title').addEventListener('click', () => this.toTitle());
   }
 
-  startStage() {
+  startStage(stageId = this.stage?.id) {
+    const stage = this.stages.find((s) => s.id === stageId) ?? this.stages[0];
+    if (!isStageUnlocked(this.stages, this.progress, stage.id)) return;
+
+    this.stage = stage;
+    this.ensureWorld();
+
     if (this.ball) {
       this.scene.remove(this.ball.group);
       this.ball = null;
@@ -119,7 +186,7 @@ export class Game {
     this.followCam.yaw = 0;
     this.camera.position.set(0, 8, 12);
     this.state = 'playing';
-    this.ui.showPlaying(this.stage.goalCm);
+    this.ui.showPlaying(this.stage);
     this.clock.getDelta();
     this.audio.unduck();
     this.audio.play();
@@ -134,6 +201,26 @@ export class Game {
     this.collectibles?.clear();
     this.ui.showTitle();
     this.audio.stop();
+  }
+
+  showCosmos() {
+    this.state = 'cosmos';
+    if (this.ball) {
+      this.scene.remove(this.ball.group);
+      this.ball = null;
+    }
+    this.collectibles?.clear();
+    this.ui.showCosmos(
+      this.stages,
+      this.progress,
+      (id) => isStageUnlocked(this.stages, this.progress, id),
+      (id) => {
+        this.audio.unlockAndPlay();
+        this.startStage(id);
+      },
+    );
+    this.audio.duck(0.45);
+    this.audio.play();
   }
 
   pause() {
@@ -156,22 +243,47 @@ export class Game {
     if (this.state !== 'playing' && !forceWin) return;
     const sizeCm = this.ball?.diameterCm ?? 0;
     const won = forceWin || sizeCm >= this.stage.goalCm;
+    this._lastResult = {
+      won,
+      sizeCm,
+      count: this.ball?.count ?? 0,
+      timeLeft: this.timeLeft,
+    };
     this.state = 'result';
     this.ui.showResult({
       won,
       sizeCm,
       goalCm: this.stage.goalCm,
-      count: this.ball?.count ?? 0,
+      count: this._lastResult.count,
       timeLeft: this.timeLeft,
+      stageName: this.stage.name,
     });
     this.audio.duck(0.4);
   }
 
+  presentToKing() {
+    if (!this._lastResult?.won) return;
+    this.progress = recordClear(
+      this.progress,
+      this.stage,
+      this._lastResult.sizeCm,
+      this._lastResult.count,
+    );
+    this.state = 'present';
+    this.ui.showPresent({
+      starName: this.stage.starName,
+      kingPraise: this.stage.kingPraise,
+      sizeCm: this._lastResult.sizeCm,
+      count: this._lastResult.count,
+    });
+    this.audio.duck(0.5);
+  }
+
   devGrow(cm) {
     if (!this.ball) return;
-    // diameter cm → radius world units (1 unit = 10 cm diameter scale: diameterCm = radius*20)
     const addRadius = cm / 20;
     this.ball.radius += addRadius;
+    this.ball.volume = this.ball.radius ** 3;
     this.ball._syncScale();
     this.ball.position.y = this.ball.radius;
   }
@@ -191,7 +303,10 @@ export class Game {
     const esc = this.input.isEscapePressed();
     if (esc && !this._escWasDown) {
       if (this.state === 'playing') this.pause();
-      else if (this.state === 'paused') this.resume();
+      else if (this.state === 'paused') {
+        if (this.ui.pausePanel !== 'main') this.ui.showPausePanel('main');
+        else this.resume();
+      }
     }
     this._escWasDown = esc;
 

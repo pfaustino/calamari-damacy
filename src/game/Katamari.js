@@ -1,12 +1,28 @@
 import * as THREE from 'three';
 
+/** Proportional volume units (4/3π cancels) — radius = ∛volume. */
+function volumeFromRadius(r) {
+  return r * r * r;
+}
+
+function radiusFromVolume(v) {
+  return Math.cbrt(Math.max(0, v));
+}
+
+/**
+ * Packed volume from a scooped object.
+ * size is bounding span; treat half-size as equivalent radius, then × packing.
+ */
+function objectPackedVolume(size, packing) {
+  const r = size * 0.5;
+  return packing * r * r * r;
+}
+
 /**
  * Sticky calamari ball — rolls, grows, parents collected meshes.
  *
- * Physics of stuck junk:
- * - Mass far from the center raises effective inertia (harder to shove / turn).
- * - Protrusions that sweep the floor add scrape drag (lumpy roll).
- * - As each object melts into the core, that lever-arm cost fades and radius grows.
+ * Growth adds packed object volume into r³, then radius = ∛volume.
+ * (Same cube-root curve as real spheres; 4/3π cancels out of the units.)
  */
 export class Katamari {
   /**
@@ -16,9 +32,10 @@ export class Katamari {
   constructor(game, startRadius) {
     this.game = game;
     this.radius = startRadius;
+    this.volume = volumeFromRadius(startRadius);
     this.massCollected = 0;
     this.count = 0;
-    /** @type {{ mesh: THREE.Object3D, mass: number, melt: number, growthLeft: number, baseScale: THREE.Vector3, dir: THREE.Vector3 }[]} */
+    /** @type {{ mesh: THREE.Object3D, mass: number, size: number, melt: number, volumeLeft: number, baseScale: THREE.Vector3, dir: THREE.Vector3 }[]} */
     this.stuck = [];
     this.velocity = new THREE.Vector3();
     this.position = new THREE.Vector3(0, startRadius, 0);
@@ -58,6 +75,7 @@ export class Katamari {
     this._tmp = new THREE.Vector3();
     this._axis = new THREE.Vector3();
     this._quat = new THREE.Quaternion();
+    this._bumpY = 0;
   }
 
   get diameterCm() {
@@ -93,8 +111,8 @@ export class Katamari {
   }
 
   /**
-   * Full mass for bonks — bigger ball still hits harder.
-   * Push uses a separate “feel” mass so growth doesn’t slow you down.
+   * Heavy mass kept for “presence,” but bonks use collisionMass so growth
+   * does not turn the ball into an unstoppable plow.
    */
   get mass() {
     const { baseMass, massPerRadius, protrusionInertia } = this.game.tuning;
@@ -102,6 +120,20 @@ export class Katamari {
       baseMass +
       this.radius * massPerRadius +
       this.protrudingMass * protrusionInertia
+    );
+  }
+
+  /** Mass used when shoving floor props — stays modest as you grow. */
+  get collisionMass() {
+    const {
+      baseMass,
+      collisionMassPerRadius = 0.2,
+      protrusionInertia = 1.6,
+    } = this.game.tuning;
+    return (
+      baseMass +
+      this.radius * collisionMassPerRadius +
+      this.protrudingMass * Math.min(0.35, protrusionInertia * 0.2)
     );
   }
 
@@ -114,7 +146,14 @@ export class Katamari {
     this.core.scale.setScalar(this.radius);
   }
 
-  /** Sink stuck meshes into the core; convert their mass into radius. */
+  /** Apply packed volume into the core; radius follows cube root of total volume. */
+  _addVolume(deltaV) {
+    if (deltaV <= 0) return;
+    this.volume += deltaV;
+    this.radius = radiusFromVolume(this.volume);
+  }
+
+  /** Sink stuck meshes into the core; convert their volume into the ball. */
   _updateMelt(dt) {
     const { meltDuration } = this.game.tuning;
     const duration = Math.max(0.35, meltDuration);
@@ -126,10 +165,10 @@ export class Katamari {
       s.melt = Math.min(1, s.melt + rate * dt);
       const gained = s.melt - prev;
 
-      if (gained > 0 && s.growthLeft > 0 && prev < 1) {
-        const drain = s.growthLeft * (gained / (1 - prev));
-        this.radius += drain;
-        s.growthLeft = Math.max(0, s.growthLeft - drain);
+      if (gained > 0 && s.volumeLeft > 0 && prev < 1) {
+        const drain = s.volumeLeft * (gained / (1 - prev));
+        this._addVolume(drain);
+        s.volumeLeft = Math.max(0, s.volumeLeft - drain);
       }
 
       const remain = 1 - s.melt;
@@ -142,9 +181,9 @@ export class Katamari {
       s.mesh.position.copy(s.dir).multiplyScalar(this.radius * (0.25 + 0.7 * remain));
 
       if (s.melt >= 1) {
-        if (s.growthLeft > 0) {
-          this.radius += s.growthLeft;
-          s.growthLeft = 0;
+        if (s.volumeLeft > 0) {
+          this._addVolume(s.volumeLeft);
+          s.volumeLeft = 0;
         }
         s.mesh.removeFromParent();
         s.mesh.geometry?.dispose?.();
@@ -161,6 +200,31 @@ export class Katamari {
   }
 
   /**
+   * Lift the ball when a stuck lump rolls onto the floor.
+   * Height comes from object size (not ball radius), so bumps stay visible as you grow.
+   * Returns 0 when nothing is underfoot → ball settles back down until the next lump.
+   */
+  _protrusionBump() {
+    let bump = 0;
+    for (const s of this.stuck) {
+      const remain = 1 - s.melt;
+      if (remain < 0.1) continue;
+
+      // Outward stick direction in world space after rolling
+      this._tmp.copy(s.dir).applyQuaternion(this.group.quaternion);
+      const downAlign = Math.max(0, -this._tmp.y); // 1 = directly under the ball
+      if (downAlign < 0.15) continue;
+
+      // How far this junk sticks past the shell (scales with object size + unmelted amount)
+      const stickHeight = s.size * 0.75 * remain;
+      // Sharper when more directly underneath
+      const weight = downAlign * downAlign * downAlign;
+      bump = Math.max(bump, stickHeight * weight);
+    }
+    return bump;
+  }
+
+  /**
    * Marble Madness–style tilt force, with lumpy-roll scrape from protrusions.
    * @param {number} dt
    * @param {{ x: number, z: number }} wish
@@ -174,6 +238,7 @@ export class Katamari {
       airDrag,
       wallBounce,
       scrapeFriction,
+      scrapeMassCap = 1.5,
       sizeSpeedGain = 0,
     } = this.game.tuning;
     const protrude = this.protrudingMass;
@@ -187,8 +252,10 @@ export class Katamari {
       this.velocity.z += wish.z * a * dt;
     }
 
-    // Per-object scrape — gone when that object finishes melting
-    const friction = rollingFriction + this.scrapeMass * scrapeFriction;
+    // Per-object scrape, soft-capped — binge scoops must not stack into a crawl
+    const rawScrape = this.scrapeMass;
+    const scrapeFeel = scrapeMassCap * rawScrape / (scrapeMassCap + rawScrape);
+    const friction = rollingFriction + scrapeFeel * scrapeFriction;
     const roll = Math.exp(-friction * dt);
     this.velocity.x *= roll;
     this.velocity.z *= roll;
@@ -203,7 +270,6 @@ export class Katamari {
 
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
-    this.position.y = this.radius;
 
     const half = this.game.stage.floorSize * 0.5 - this.radius;
     if (this.position.x > half) {
@@ -230,6 +296,14 @@ export class Katamari {
       this.group.quaternion.premultiply(this._quat);
     }
 
+    // Ride up over lumps, then settle back down until the next one
+    const targetBump = this._protrusionBump();
+    // Snap up onto a lump; fall back down a bit softer so the drop reads clearly
+    const bumpRate = targetBump > this._bumpY ? 22 : 16;
+    this._bumpY += (targetBump - this._bumpY) * (1 - Math.exp(-bumpRate * dt));
+    if (targetBump < 0.001 && this._bumpY < 0.002) this._bumpY = 0;
+    this.position.y = this.radius + this._bumpY;
+
     this.group.position.copy(this.position);
   }
 
@@ -247,19 +321,20 @@ export class Katamari {
     local.multiplyScalar(this.radius * 0.95);
 
     const baseScale = mesh.scale.clone();
-    const growthLeft = typeDef.mass * this.game.tuning.growthPerMass;
+    const packing = this.game.tuning.volumePacking ?? 0.45;
+    const volumeLeft = objectPackedVolume(typeDef.size, packing);
 
     this.stuck.push({
       mesh,
       mass: typeDef.mass,
+      size: typeDef.size,
       melt: 0,
-      growthLeft,
+      volumeLeft,
       baseScale,
       dir,
     });
 
     this.count += 1;
     this.massCollected += typeDef.mass;
-    // Immediate heft from the scoop (inertia), growth comes via melt
   }
 }

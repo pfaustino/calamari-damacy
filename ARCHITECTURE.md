@@ -2,9 +2,12 @@
 
 ## State machine
 
-`title` → `playing` ⇄ `paused` → `result` → (`playing` | `title`)
+`title` → `playing` ⇄ `paused` → `result` → (`present` → `cosmos` | retry `playing`) → …
 
 Owned by `src/game/Game.js` (orchestrator only).
+
+Win path: Present to the King → star hung → Cosmos stage select.  
+Lose path: Try Again (same stage).
 
 ## Modules
 
@@ -12,21 +15,23 @@ Owned by `src/game/Game.js` (orchestrator only).
 |--------|------|
 | `Game.js` | State, loop, wiring |
 | `Katamari.js` | Ball motion, growth, sticking |
-| `Collectibles.js` | Spawn + pickup tests |
+| `Collectibles.js` | Spawn + pickup / bonk |
 | `World.js` | Floor, lights, fog |
 | `FollowCamera.js` | Third-person follow + wish→world |
 | `Input.js` | Keyboard |
 | `UI.js` | HUD / overlays |
+| `Progress.js` | localStorage clears & stars |
+| `AudioManager.js` | Playlist + SFX |
 | `rng.js` | Seeded Mulberry32 |
 
 ## Data
 
-- `data/game.json` — accel, max speed, pickup ratio, camera  
-- `data/stage.json` — timer, goal cm, floor, spawn count, seed  
-- `data/objects.json` — pickup types (size, mass, color, weight)  
+- `data/game.json` — accel, camera, scrape, bonk  
+- `data/stages.json` — missions (timer, goal, star name, King line)  
+- `data/objects.json` — pickup types  
 
 ## Constants that must stay aligned
 
 - Display size: `diameterCm = round(radius * 20)` (1 world unit radius ≈ 10 cm radius / 20 cm diameter)  
 - Pickup: `object.size < radius * tuning.pickupRatio`  
-- Scoop → melt: growth is deferred via `growthLeft` and applied as `melt` goes 0→1; protrusions add `protrusionInertia` + `scrapeFriction` until melted  
+- Scoop → melt: object volume (`packing × (size/2)³`) adds into ball `r³`; radius = ∛V  

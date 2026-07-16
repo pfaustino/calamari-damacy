@@ -1,6 +1,13 @@
 /**
- * Looping soundtrack + procedural shlurp / bonk SFX (Web Audio).
+ * Background music playlist + procedural shlurp / bonk SFX (Web Audio).
  */
+const PLAYLIST = [
+  'audio/vintage-mouse-hunt.mp3',
+  'audio/vintage-piano.mp3',
+  'audio/vintage-jazz-coffee.mp3',
+  'audio/vintage-comedy.mp3',
+];
+
 export class AudioManager {
   constructor() {
     /** @type {HTMLAudioElement | null} */
@@ -11,23 +18,100 @@ export class AudioManager {
     this.sfxVolume = 0.55;
     this._unlocked = false;
     this._lastBonkAt = 0;
+    this._trackIndex = 0;
+    this._duckFactor = 1;
+    this._loadSettings();
   }
 
-  _src() {
-    return new URL(`${import.meta.env.BASE_URL}audio/vintage-mouse-hunt.mp3`, window.location.href).href;
+  _settingsKey() {
+    return 'calamari-damacy-audio-v1';
+  }
+
+  _loadSettings() {
+    try {
+      const raw = localStorage.getItem(this._settingsKey());
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (typeof data.musicVolume === 'number') {
+        this.musicVolume = Math.min(1, Math.max(0, data.musicVolume));
+      }
+      if (typeof data.sfxVolume === 'number') {
+        this.sfxVolume = Math.min(1, Math.max(0, data.sfxVolume));
+      }
+    } catch {
+      /* keep defaults */
+    }
+  }
+
+  _saveSettings() {
+    localStorage.setItem(
+      this._settingsKey(),
+      JSON.stringify({
+        musicVolume: this.musicVolume,
+        sfxVolume: this.sfxVolume,
+      }),
+    );
+  }
+
+  /** @param {number} v 0..1 */
+  setMusicVolume(v) {
+    this.musicVolume = Math.min(1, Math.max(0, v));
+    if (this.music) this.music.volume = this.musicVolume * this._duckFactor;
+    this._saveSettings();
+  }
+
+  /** @param {number} v 0..1 */
+  setSfxVolume(v) {
+    this.sfxVolume = Math.min(1, Math.max(0, v));
+    this._saveSettings();
+  }
+
+  getMusicVolumePct() {
+    return Math.round(this.musicVolume * 100);
+  }
+
+  getSfxVolumePct() {
+    return Math.round(this.sfxVolume * 100);
+  }
+
+  _trackUrl(relPath) {
+    return new URL(`${import.meta.env.BASE_URL}${relPath}`, window.location.href).href;
   }
 
   init() {
-    const src = this._src();
-    const audio = new Audio(src);
-    audio.loop = true;
+    const audio = new Audio();
     audio.preload = 'auto';
     audio.volume = this.musicVolume;
     audio.addEventListener('error', () => {
-      console.error('Soundtrack failed to load', { src, code: audio.error?.code });
+      console.error('Soundtrack failed to load', {
+        src: audio.src,
+        code: audio.error?.code,
+        track: PLAYLIST[this._trackIndex],
+      });
     });
+    audio.addEventListener('ended', () => this._nextTrack());
     this.music = audio;
-    audio.load();
+    this._loadTrack(this._trackIndex, false);
+  }
+
+  _loadTrack(index, autoplay) {
+    if (!this.music) return;
+    this._trackIndex = ((index % PLAYLIST.length) + PLAYLIST.length) % PLAYLIST.length;
+    const src = this._trackUrl(PLAYLIST[this._trackIndex]);
+    this.music.loop = false;
+    this.music.src = src;
+    this.music.load();
+    this.music.volume = this.musicVolume * this._duckFactor;
+    if (autoplay && this._unlocked) {
+      const p = this.music.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch((err) => console.warn('Next track play failed', err));
+      }
+    }
+  }
+
+  _nextTrack() {
+    this._loadTrack(this._trackIndex + 1, true);
   }
 
   _ensureCtx() {
@@ -46,21 +130,25 @@ export class AudioManager {
     if (!this.music) this.init();
     this._unlocked = true;
     this._ensureCtx();
+    this._duckFactor = 1;
     this.music.muted = false;
     this.music.volume = this.musicVolume;
-    const p = this.music.play();
-    if (p && typeof p.then === 'function') {
-      p.then(() => console.info('Soundtrack playing')).catch((err) => {
-        console.warn('Music play() failed', err);
-        this._unlocked = false;
-      });
+    // Restart current track if stopped at 0 from title
+    if (this.music.paused) {
+      const p = this.music.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => console.info('Soundtrack playing', PLAYLIST[this._trackIndex])).catch((err) => {
+          console.warn('Music play() failed', err);
+          this._unlocked = false;
+        });
+      }
     }
   }
 
   play() {
     if (!this.music || !this._unlocked) return;
     this.music.muted = false;
-    this.music.volume = this.musicVolume;
+    this.music.volume = this.musicVolume * this._duckFactor;
     const p = this.music.play();
     if (p && typeof p.catch === 'function') p.catch(() => {});
   }
@@ -70,11 +158,13 @@ export class AudioManager {
   }
 
   duck(factor = 0.35) {
+    this._duckFactor = factor;
     if (!this.music) return;
     this.music.volume = this.musicVolume * factor;
   }
 
   unduck() {
+    this._duckFactor = 1;
     if (!this.music) return;
     this.music.volume = this.musicVolume;
   }
@@ -83,6 +173,7 @@ export class AudioManager {
     if (!this.music) return;
     this.music.pause();
     this.music.currentTime = 0;
+    this._duckFactor = 1;
   }
 
   /**
@@ -96,7 +187,6 @@ export class AudioManager {
     const pitch = 420 + Math.max(0.1, 1.2 - size) * 280;
     const dur = 0.18 + Math.min(0.12, size * 0.08);
 
-    // Descending tone (suction)
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(pitch, t0);
@@ -107,7 +197,6 @@ export class AudioManager {
     toneGain.gain.exponentialRampToValueAtTime(0.22 * this.sfxVolume, t0 + 0.02);
     toneGain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
 
-    // Soft noise burst (wetness)
     const noiseDur = dur * 0.7;
     const noiseBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * noiseDur), ctx.sampleRate);
     const data = noiseBuf.getChannelData(0);
@@ -146,7 +235,6 @@ export class AudioManager {
     const t0 = ctx.currentTime;
     const amp = Math.min(1, 0.35 + intensity * 0.5) * this.sfxVolume;
 
-    // Low thud
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(140 + intensity * 40, t0);
@@ -157,7 +245,6 @@ export class AudioManager {
     thudGain.gain.exponentialRampToValueAtTime(0.35 * amp, t0 + 0.01);
     thudGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
 
-    // Click / wood knock transient
     const clickDur = 0.04;
     const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * clickDur), ctx.sampleRate);
     const data = buf.getChannelData(0);

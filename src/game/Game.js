@@ -82,7 +82,10 @@ export class Game {
       actions: [
         { label: 'Win now', fn: () => this.endStage(true) },
         { label: 'Grow +10cm', fn: () => this.devGrow(10) },
-        { label: 'Skip 30s', fn: () => { this.timeLeft = Math.max(0, this.timeLeft - 30); } },
+        { label: 'Skip 30s', fn: () => {
+          this.timeLeft = Math.max(0, this.timeLeft - 30);
+          this.mp?.nudgeMatchClock?.(-30);
+        } },
         { label: 'Restart stage', fn: () => this.startStage(this.stage.id) },
         { label: 'Clear progress', fn: () => { clearProgress(); this.progress = loadProgress(); this.showCosmos(); } },
         { label: 'Cosmos', fn: () => this.showCosmos() },

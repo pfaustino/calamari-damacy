@@ -37,6 +37,9 @@ export class Multiplayer {
     this._voteTimeoutSent = false;
     this._localVote = null;
     this._resolving = false;
+    /** Race clock deadline (Date.now ms). */
+    this._matchEndsAt = 0;
+    this._matchTimeoutSent = false;
     /** @type {Map<string, number>} */
     this._scatterCooldown = new Map();
   }
@@ -202,6 +205,11 @@ export class Multiplayer {
       return;
     }
 
+    if (msg.type === 'match-timeout' && this.isHost && this.phase === 'playing') {
+      this._endMatchByTime();
+      return;
+    }
+
     if (msg.type === 'votes' && !this.isHost && this.phase === 'voting') {
       this._votes = msg.votes || {};
       if (msg.voteEndsAt) this._voteEndsAt = msg.voteEndsAt;
@@ -246,6 +254,7 @@ export class Multiplayer {
     const payload = {
       type: 'start',
       stageId: pick.id,
+      matchEndsAt: Date.now() + (pick.timeLimit ?? 300) * 1000,
       players: this.players.map((p) => ({ id: p.id, name: p.name, color: p.color })),
     };
     this.net.send(payload);
@@ -275,6 +284,8 @@ export class Multiplayer {
     this._localVote = null;
     this._resolving = false;
     this._scatterCooldown.clear();
+    this._matchEndsAt = msg.matchEndsAt || Date.now() + (stage.timeLimit ?? 300) * 1000;
+    this._matchTimeoutSent = false;
 
     this.players = (msg.players || this.players).map((p) => ({
       id: p.id,
@@ -285,6 +296,19 @@ export class Multiplayer {
     }));
 
     this.game.beginMultiplayerStage(stage, this.players);
+    this.game.timeLeft = this._matchSecondsLeft();
+  }
+
+  _matchSecondsLeft() {
+    if (!this._matchEndsAt) return this.game.timeLeft;
+    return Math.max(0, (this._matchEndsAt - Date.now()) / 1000);
+  }
+
+  /** Dev cheat / sync: shift the wall-clock race end. */
+  nudgeMatchClock(deltaSec) {
+    if (!this._matchEndsAt) return;
+    this._matchEndsAt += deltaSec * 1000;
+    this.game.timeLeft = this._matchSecondsLeft();
   }
 
   /** Called by Game after balls are created. */
@@ -331,6 +355,7 @@ export class Multiplayer {
     if (local) local.wish = localWish;
 
     if (!this.isHost) {
+      this.game.timeLeft = this._matchSecondsLeft();
       this._inputAcc += dt;
       if (this._inputAcc >= 1 / 20) {
         this._inputAcc = 0;
@@ -345,6 +370,10 @@ export class Multiplayer {
         if (!p.ball || p.id === this.localId) continue;
         p.ball.smoothToNet(dt);
         p.ball.tickVisuals(dt);
+      }
+      if (Date.now() >= this._matchEndsAt && !this._matchTimeoutSent) {
+        this._matchTimeoutSent = true;
+        this.net.send({ type: 'match-timeout' });
       }
       return;
     }
@@ -367,7 +396,7 @@ export class Multiplayer {
 
     this._resolveBallBall();
 
-    this.game.timeLeft -= dt;
+    this.game.timeLeft = this._matchSecondsLeft();
 
     // Race win: first to goal
     const goal = this.game.stage.goalCm || 40;
@@ -378,11 +407,7 @@ export class Multiplayer {
       }
     }
     if (this.game.timeLeft <= 0) {
-      let best = this.players[0];
-      for (const p of this.players) {
-        if ((p.ball?.diameterCm ?? 0) > (best.ball?.diameterCm ?? 0)) best = p;
-      }
-      this._endMatch(best.id, 'time');
+      this._endMatchByTime();
       return;
     }
 
@@ -391,6 +416,15 @@ export class Multiplayer {
       this._stateAcc = 0;
       this._broadcastState();
     }
+  }
+
+  _endMatchByTime() {
+    if (this.phase !== 'playing') return;
+    let best = this.players[0];
+    for (const p of this.players) {
+      if ((p.ball?.diameterCm ?? 0) > (best.ball?.diameterCm ?? 0)) best = p;
+    }
+    this._endMatch(best.id, 'time');
   }
 
   _resolveBallBall() {
@@ -519,6 +553,7 @@ export class Multiplayer {
     this.net.send({
       type: 'state',
       timeLeft: this.game.timeLeft,
+      matchEndsAt: this._matchEndsAt,
       scoops,
       events,
       players: this.players.map((p) => ({
@@ -536,8 +571,12 @@ export class Multiplayer {
   }
 
   _applyState(msg) {
-    this.game.timeLeft = msg.timeLeft;
+    if (msg.matchEndsAt) this._matchEndsAt = msg.matchEndsAt;
+    this.game.timeLeft = this._matchSecondsLeft();
     // Legacy fallback
+    if (!msg.matchEndsAt && msg.timeLeft != null) {
+      this.game.timeLeft = msg.timeLeft;
+    }
     if (msg.removed?.length) {
       this.game.collectibles.removeByIds(msg.removed);
     }

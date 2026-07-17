@@ -32,8 +32,9 @@ export class Multiplayer {
     this._predictedScoopIds = new Set();
     /** @type {Record<string, string>} */
     this._votes = {};
-    this._voteLeft = 0;
-    this._voteSyncAcc = 0;
+    /** Wall-clock deadline (Date.now ms) so background tabs don't freeze the timer. */
+    this._voteEndsAt = 0;
+    this._voteTimeoutSent = false;
     this._localVote = null;
     this._resolving = false;
     /** @type {Map<string, number>} */
@@ -195,9 +196,15 @@ export class Multiplayer {
       return;
     }
 
+    if (msg.type === 'vote-timeout' && this.isHost && this.phase === 'voting') {
+      // Guest wall-clock expired — resolve even if host tab is backgrounded
+      this._resolveVotes();
+      return;
+    }
+
     if (msg.type === 'votes' && !this.isHost && this.phase === 'voting') {
       this._votes = msg.votes || {};
-      this._voteLeft = msg.secondsLeft ?? this._voteLeft;
+      if (msg.voteEndsAt) this._voteEndsAt = msg.voteEndsAt;
       this._refreshVoteUi();
       return;
     }
@@ -305,21 +312,15 @@ export class Multiplayer {
    */
   update(dt, localWish) {
     if (this.phase === 'voting') {
-      if (this.isHost && !this._resolving) {
-        this._voteLeft -= dt;
-        this._voteSyncAcc += dt;
-        if (this._voteSyncAcc >= 0.25) {
-          this._voteSyncAcc = 0;
-          this._broadcastVotes();
+      this._refreshVoteUi();
+      if (this.isHost && !this._resolving && Date.now() >= this._voteEndsAt) {
+        this._resolveVotes();
+      } else if (!this.isHost && !this._resolving && Date.now() >= this._voteEndsAt) {
+        // Nudge host — PeerJS still delivers while their tab is backgrounded
+        if (!this._voteTimeoutSent) {
+          this._voteTimeoutSent = true;
+          this.net.send({ type: 'vote-timeout' });
         }
-        this._refreshVoteUi();
-        if (this._voteLeft <= 0) {
-          this._voteLeft = 0;
-          this._resolveVotes();
-        }
-      } else if (!this.isHost) {
-        this._voteLeft = Math.max(0, this._voteLeft - dt);
-        this._refreshVoteUi();
       }
       return;
     }
@@ -606,6 +607,7 @@ export class Multiplayer {
       reason,
       rankings,
       voteSeconds: VOTE_SECONDS,
+      voteEndsAt: Date.now() + VOTE_SECONDS * 1000,
       stageId: this.stageId,
     };
     if (this.isHost) this.net.send(payload);
@@ -616,8 +618,9 @@ export class Multiplayer {
     this.phase = 'voting';
     this._votes = {};
     this._localVote = null;
-    this._voteLeft = msg.voteSeconds ?? VOTE_SECONDS;
-    this._voteSyncAcc = 0;
+    const secs = msg.voteSeconds ?? VOTE_SECONDS;
+    this._voteEndsAt = msg.voteEndsAt || Date.now() + secs * 1000;
+    this._voteTimeoutSent = false;
     this._resolving = false;
     if (msg.stageId) this.stageId = msg.stageId;
     this.game.endMultiplayer(msg);
@@ -637,17 +640,22 @@ export class Multiplayer {
     this._refreshVoteUi();
   }
 
+  _voteSecondsLeft() {
+    return Math.max(0, (this._voteEndsAt - Date.now()) / 1000);
+  }
+
   _broadcastVotes() {
     this.net.send({
       type: 'votes',
       votes: { ...this._votes },
-      secondsLeft: Math.max(0, this._voteLeft),
+      voteEndsAt: this._voteEndsAt,
+      secondsLeft: this._voteSecondsLeft(),
     });
   }
 
   _refreshVoteUi() {
     this.game.ui.updateMpVote({
-      secondsLeft: this._voteLeft,
+      secondsLeft: this._voteSecondsLeft(),
       localVote: this._localVote,
       votes: this.players.map((p) => ({
         id: p.id,

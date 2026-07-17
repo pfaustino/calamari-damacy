@@ -63,6 +63,7 @@ export class Game {
     this.world = new World(this);
     this.collectibles = new Collectibles(this);
     this.followCam = new FollowCamera(this);
+    this.followCam.init();
     this.audio.init();
 
     this.bindUi();
@@ -106,15 +107,23 @@ export class Game {
     this.camera.position.set(0, 8, 12);
   }
 
-  /** Build floor/lights once using the largest arena among stages. */
+  /** Initialize persistent world lights/root once. Stage visuals rebuild per mission. */
   ensureWorld() {
     if (this._worldBuilt) return;
-    const maxFloor = Math.max(...this.stages.map((s) => s.floorSize));
-    const prev = this.stage;
-    this.stage = { ...prev, floorSize: maxFloor };
     this.world.init();
-    this.stage = prev;
     this._worldBuilt = true;
+  }
+
+  pickKingLine(kind) {
+    const lines = this.stage?.[kind];
+    if (Array.isArray(lines) && lines.length > 0) {
+      const seed = (this.ball?.count ?? 0) + (this.ball?.diameterCm ?? 0);
+      return lines[seed % lines.length];
+    }
+    if (typeof lines === 'string') return lines;
+    if (kind === 'kingFailure') return 'We expected the sky. You brought a damp suggestion.';
+    if (kind === 'kingIntro') return 'Roll, little Prince. The Cosmos is waiting.';
+    return 'Acceptable! Into the sky with it.';
   }
 
   bindUi() {
@@ -174,6 +183,7 @@ export class Game {
 
     this.stage = stage;
     this.ensureWorld();
+    this.world.buildStage(this.stage);
 
     if (this.ball) {
       this.scene.remove(this.ball.group);
@@ -183,7 +193,7 @@ export class Game {
     this.ball = new Katamari(this, this.stage.startRadius);
     this.collectibles.spawn();
     this.timeLeft = this.stage.timeLimit;
-    this.followCam.yaw = 0;
+    this.followCam.reset();
     this.camera.position.set(0, 8, 12);
     this.state = 'playing';
     this.ui.showPlaying(this.stage);
@@ -257,6 +267,7 @@ export class Game {
       count: this._lastResult.count,
       timeLeft: this.timeLeft,
       stageName: this.stage.name,
+      kingLine: this.pickKingLine(won ? 'kingPraise' : 'kingFailure'),
     });
     this.audio.duck(0.4);
   }
@@ -272,7 +283,7 @@ export class Game {
     this.state = 'present';
     this.ui.showPresent({
       starName: this.stage.starName,
-      kingPraise: this.stage.kingPraise,
+      kingPraise: this.pickKingLine('kingPraise'),
       sizeCm: this._lastResult.sizeCm,
       count: this._lastResult.count,
     });

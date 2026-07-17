@@ -10,8 +10,19 @@
       "floorSize": 80,
       "spawnCount": 1100,
       "seed": 4242,
+      "theme": "tide-pool",
       "starName": "Coral Twinkle",
-      "kingPraise": "Hmm! Sticky, round, and faintly fishy. Perfect. Hang it in the sky!"
+      "kingIntro": "Small work for a small Prince. Do not be offended. Be useful.",
+      "kingPraise": [
+        "Hmm! Sticky, round, and faintly fishy. Perfect. Hang it in the sky!",
+        "A petite little blob. Not royal, exactly, but charming in a damp way.",
+        "Yes, yes. The shallows are less embarrassing now."
+      ],
+      "kingFailure": [
+        "Tiny! Minuscule! We have seen plankton with greater ambition.",
+        "The Cosmos cannot hang a shrug in the sky. Roll larger.",
+        "A damp marble is not a star, little Prince."
+      ]
     },
     {
       "id": "reef-2",
@@ -23,8 +34,19 @@
       "floorSize": 100,
       "spawnCount": 1400,
       "seed": 7777,
+      "theme": "coral-reef",
       "starName": "Reef Lantern",
-      "kingPraise": "Magnificent lump! The cosmos looks slightly more... moist. I approve."
+      "kingIntro": "Now the reef. Colorful, crowded, and terribly under-rolled.",
+      "kingPraise": [
+        "Magnificent lump! The cosmos looks slightly more... moist. I approve.",
+        "Ah! A reef-star. Gaudy, sticky, almost fashionable.",
+        "The corals tremble. The King nods. This is progress."
+      ],
+      "kingFailure": [
+        "A reef requires volume, not optimism.",
+        "You rolled with feeling, but not enough circumference.",
+        "Pretty colors, little result. The King sighs beautifully."
+      ]
     },
     {
       "id": "harbor-3",
@@ -36,8 +58,19 @@
       "floorSize": 120,
       "spawnCount": 1600,
       "seed": 1337,
+      "theme": "harbor",
       "starName": "Harbor Beacon",
-      "kingPraise": "A lighthouse of junk! Truly, my child, you understand stickiness."
+      "kingIntro": "The harbor is cluttered with mortal nonsense. Convert it to astronomy.",
+      "kingPraise": [
+        "A lighthouse of junk! Truly, my child, you understand stickiness.",
+        "Splendid! We can smell the dock from here. Very celestial.",
+        "Boats, buoys, barnacles of destiny. Into the sky with it!"
+      ],
+      "kingFailure": [
+        "The harbor remains offensively three-dimensional.",
+        "No beacon today. Merely a floating disappointment.",
+        "The King expected grandeur. The Prince delivered a beach toy."
+      ]
     }
   ]
 }

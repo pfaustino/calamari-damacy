@@ -3,14 +3,35 @@ import * as THREE from 'three';
 /**
  * Third-person camera that eases behind the ball along travel direction.
  * Input is camera-relative; yaw only follows forward travel (not strafe/reverse).
+ * Mouse wheel zooms in/out.
  */
 export class FollowCamera {
   /** @param {import('./Game.js').Game} game */
   constructor(game) {
     this.game = game;
     this.yaw = 0;
+    /** 1 = default; smaller = closer; larger = farther */
+    this.zoom = 1;
     this._desired = new THREE.Vector3();
     this._look = new THREE.Vector3();
+    this._onWheel = (e) => {
+      e.preventDefault();
+      const step = this.game.tuning.cameraZoomStep ?? 0.12;
+      const min = this.game.tuning.cameraZoomMin ?? 0.45;
+      const max = this.game.tuning.cameraZoomMax ?? 2.4;
+      const dir = e.deltaY > 0 ? 1 : -1;
+      this.zoom = THREE.MathUtils.clamp(this.zoom + dir * step, min, max);
+    };
+  }
+
+  init() {
+    const canvas = document.getElementById('game-canvas');
+    canvas?.addEventListener('wheel', this._onWheel, { passive: false });
+  }
+
+  reset() {
+    this.yaw = 0;
+    this.zoom = 1;
   }
 
   /**
@@ -38,8 +59,8 @@ export class FollowCamera {
       }
     }
 
-    const dist = cameraDistance + ball.radius * 2.2;
-    const height = cameraHeight + ball.radius * 1.4;
+    const dist = (cameraDistance + ball.radius * 2.2) * this.zoom;
+    const height = (cameraHeight + ball.radius * 1.4) * this.zoom;
 
     this._desired.set(
       ball.position.x - Math.sin(this.yaw) * dist,

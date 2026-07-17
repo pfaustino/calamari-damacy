@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('calamari damacy smoke', () => {
   test('title screen loads', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('.brand')).toHaveText('Calamari Damacy');
+    await expect(page.locator('#title-screen .brand')).toHaveText('Calamari Damacy');
     await expect(page.locator('#btn-play')).toBeVisible();
   });
 

@@ -75,19 +75,19 @@ export class UI {
     if (sfxVal) sfxVal.textContent = `${sfxPct}%`;
   }
 
-  showResult({ won, sizeCm, goalCm, count, timeLeft, stageName }) {
+  showResult({ won, sizeCm, goalCm, count, timeLeft, stageName, kingLine }) {
     this.hideAllOverlays();
     this.result.classList.remove('hidden');
     if (won) {
       this.resultTitle.textContent = 'Mission complete!';
       this.resultMessage.textContent =
-        `You rolled a ${sizeCm} cm calamari in ${stageName}. The King awaits your offering.`;
+        `${kingLine} You rolled a ${sizeCm} cm calamari in ${stageName}.`;
       this.resultPrimary.textContent = 'Present to the King';
     } else {
       this.resultTitle.textContent = 'Too small…';
       this.resultMessage.textContent =
         timeLeft <= 0
-          ? 'Time is up! The King is… unimpressed.'
+          ? kingLine
           : 'Keep rolling — anything smaller than you sticks.';
       this.resultPrimary.textContent = 'Try Again';
     }

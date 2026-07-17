@@ -45,6 +45,8 @@ Dev cheats: open with `?dev=1` (also auto-on in Vite DEV).
 ## Non-goals (v0.1)
 
 - Dual-stick classic Katamari controls  
-- Multi-stage campaign / King of All Cosmos cutscenes  
-- Networked multiplayer  
 - Physics engine (simple kinematic roll only)  
+
+## Multiplayer (MVP)
+
+Title → **Multiplayer**: host a room (share the code) or join. Race to the size goal; bump rivals to steal volume. Host simulates; guests send input (PeerJS). Works across browsers/devices on the same network path PeerJS can connect.

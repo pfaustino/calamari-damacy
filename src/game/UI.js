@@ -1,5 +1,5 @@
 /**
- * HUD / overlay helpers for title → play → result → present → cosmos.
+ * HUD / overlay helpers for title → play → result → present → cosmos → multiplayer.
  */
 export class UI {
   constructor() {
@@ -8,6 +8,8 @@ export class UI {
     this.sizeGoal = document.getElementById('hud-size-goal');
     this.timerValue = document.getElementById('hud-timer-value');
     this.stageName = document.getElementById('hud-stage-name');
+    this.mpRosterHud = document.getElementById('hud-mp-roster');
+    this.mpEventHud = document.getElementById('hud-mp-event');
     this.title = document.getElementById('title-screen');
     this.pause = document.getElementById('pause-screen');
     this.result = document.getElementById('result-screen');
@@ -23,7 +25,10 @@ export class UI {
     this.cosmos = document.getElementById('cosmos-screen');
     this.hungStars = document.getElementById('hung-stars');
     this.stageList = document.getElementById('stage-list');
+    this.mpScreen = document.getElementById('mp-screen');
+    this.mpResult = document.getElementById('mp-result-screen');
     this.pausePanel = 'main';
+    this._eventTimer = 0;
   }
 
   hideAllOverlays() {
@@ -32,6 +37,8 @@ export class UI {
     this.result.classList.add('hidden');
     this.present.classList.add('hidden');
     this.cosmos.classList.add('hidden');
+    this.mpScreen?.classList.add('hidden');
+    this.mpResult?.classList.add('hidden');
     this.hud.classList.add('hidden');
   }
 
@@ -40,7 +47,78 @@ export class UI {
     this.title.classList.remove('hidden');
   }
 
-  showPlaying(stage) {
+  showMpMenu() {
+    this.hideAllOverlays();
+    this.mpScreen.classList.remove('hidden');
+    document.getElementById('mp-status').textContent = 'Host a room, or enter a code to join.';
+    document.getElementById('mp-room-code').classList.add('hidden');
+    document.getElementById('mp-roster').innerHTML = '';
+    document.getElementById('btn-mp-start').classList.add('hidden');
+    document.getElementById('btn-mp-host').classList.remove('hidden');
+    document.getElementById('btn-mp-join').classList.remove('hidden');
+  }
+
+  showMpLobby({ status, roomCode, players, isHost, canStart = false }) {
+    this.hideAllOverlays();
+    this.mpScreen.classList.remove('hidden');
+    document.getElementById('mp-status').textContent = status || '';
+    const codeEl = document.getElementById('mp-room-code');
+    if (roomCode) {
+      codeEl.textContent = `Room code: ${roomCode}`;
+      codeEl.classList.remove('hidden');
+    } else {
+      codeEl.classList.add('hidden');
+    }
+    const roster = document.getElementById('mp-roster');
+    roster.innerHTML = '';
+    for (const p of players || []) {
+      const row = document.createElement('div');
+      row.className = 'mp-roster-row';
+      const swatch = document.createElement('span');
+      swatch.className = 'mp-swatch';
+      swatch.style.background = `#${(p.color >>> 0).toString(16).padStart(6, '0')}`;
+      row.appendChild(swatch);
+      const label = document.createElement('span');
+      label.textContent = `${p.name}${p.you ? ' (you)' : ''}${isHost && p.you ? ' · host' : ''}`;
+      row.appendChild(label);
+      roster.appendChild(row);
+    }
+    document.getElementById('btn-mp-start').classList.toggle('hidden', !canStart);
+    document.getElementById('btn-mp-host').classList.toggle('hidden', Boolean(roomCode));
+    document.getElementById('btn-mp-join').classList.toggle('hidden', Boolean(roomCode));
+  }
+
+  showMpResult({ youWon, reason, rankings, stageName }) {
+    this.hideAllOverlays();
+    this.mpResult.classList.remove('hidden');
+    document.getElementById('mp-result-title').textContent = youWon ? 'You win!' : 'Match over';
+    const why =
+      reason === 'goal'
+        ? 'First to the size goal.'
+        : 'Time up — biggest calamari wins.';
+    document.getElementById('mp-result-message').textContent =
+      `${why} (${stageName || 'Arena'})`;
+    const box = document.getElementById('mp-result-rankings');
+    box.innerHTML = '';
+    (rankings || []).forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = `mp-rank-row${r.you ? ' you' : ''}`;
+      row.textContent = `${i + 1}. ${r.name} — ${r.sizeCm} cm · ${r.count} objects`;
+      box.appendChild(row);
+    });
+  }
+
+  flashMpEvent(text) {
+    if (!this.mpEventHud) return;
+    this.mpEventHud.textContent = text;
+    this.mpEventHud.classList.remove('hidden');
+    clearTimeout(this._eventTimer);
+    this._eventTimer = setTimeout(() => {
+      this.mpEventHud.classList.add('hidden');
+    }, 2200);
+  }
+
+  showPlaying(stage, opts = {}) {
     this.hideAllOverlays();
     this.hud.classList.remove('hidden');
     if (stage.mode === 'collect') {
@@ -49,7 +127,13 @@ export class UI {
     } else {
       this.sizeGoal.textContent = `Goal ${stage.goalCm} cm`;
     }
-    this.stageName.textContent = stage.name;
+    this.stageName.textContent = opts.multiplayer
+      ? `${stage.name} · Race & Battle`
+      : stage.name;
+    if (this.mpRosterHud) {
+      this.mpRosterHud.classList.toggle('hidden', !opts.multiplayer);
+      this.mpRosterHud.innerHTML = '';
+    }
   }
 
   showPause() {
@@ -125,7 +209,6 @@ export class UI {
     this.presentMessage.textContent = kingPraise;
     this.presentStats.textContent = `${sizeCm} cm · ${count} objects → a star`;
     this.risingStar.classList.remove('rise');
-    // Retrigger animation
     void this.risingStar.offsetWidth;
     this.risingStar.classList.add('rise');
   }
@@ -194,5 +277,15 @@ export class UI {
     this.timerValue.textContent = `${m}:${s.toString().padStart(2, '0')}`;
     if (timeSec < 30) this.timerValue.style.color = '#ff6b6b';
     else this.timerValue.style.color = '';
+
+    if (this.mpRosterHud && mission.multiplayer && mission.roster) {
+      this.mpRosterHud.classList.remove('hidden');
+      this.mpRosterHud.innerHTML = mission.roster
+        .map(
+          (r) =>
+            `<span class="hud-mp-chip${r.you ? ' you' : ''}">${r.name} ${r.sizeCm}cm</span>`,
+        )
+        .join('');
+    }
   }
 }

@@ -28,8 +28,9 @@ export class Katamari {
   /**
    * @param {import('./Game.js').Game} game
    * @param {number} startRadius
+   * @param {{ color?: number, spawnX?: number, spawnZ?: number }=} opts
    */
-  constructor(game, startRadius) {
+  constructor(game, startRadius, opts = {}) {
     this.game = game;
     this.radius = startRadius;
     this.volume = volumeFromRadius(startRadius);
@@ -38,17 +39,20 @@ export class Katamari {
     /** @type {{ mesh: THREE.Object3D, mass: number, size: number, melt: number, volumeLeft: number, baseScale: THREE.Vector3, dir: THREE.Vector3 }[]} */
     this.stuck = [];
     this.velocity = new THREE.Vector3();
-    this.position = new THREE.Vector3(0, startRadius, 0);
+    const sx = opts.spawnX ?? 0;
+    const sz = opts.spawnZ ?? 0;
+    this.position = new THREE.Vector3(sx, startRadius, sz);
 
     this.group = new THREE.Group();
     this.group.position.copy(this.position);
 
+    const color = opts.color ?? 0xff6b8a;
     const geo = new THREE.SphereGeometry(1, 24, 18);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xff6b8a,
+      color,
       roughness: 0.45,
       metalness: 0.05,
-      emissive: 0x3a1020,
+      emissive: new THREE.Color(color).multiplyScalar(0.25),
       emissiveIntensity: 0.15,
     });
     this.core = new THREE.Mesh(geo, mat);
@@ -151,6 +155,38 @@ export class Katamari {
     if (deltaV <= 0) return;
     this.volume += deltaV;
     this.radius = radiusFromVolume(this.volume);
+  }
+
+  addVolume(deltaV) {
+    this._addVolume(deltaV);
+    this._syncScale();
+    this.position.y = this.radius + this._bumpY;
+    this.group.position.y = this.position.y;
+  }
+
+  /** Battle steal — shrink without destroying stuck meshes. */
+  removeVolume(deltaV) {
+    if (deltaV <= 0) return;
+    const minV = volumeFromRadius(Math.max(0.25, this.game.stage?.startRadius * 0.6 ?? 0.3));
+    this.volume = Math.max(minV, this.volume - deltaV);
+    this.radius = radiusFromVolume(this.volume);
+    this._syncScale();
+    this.position.y = this.radius + this._bumpY;
+    this.group.position.y = this.position.y;
+  }
+
+  /** Guest: snap to host authority. */
+  applyNetState(snap) {
+    this.position.x = snap.x;
+    this.position.z = snap.z;
+    this.position.y = snap.y ?? snap.radius;
+    this.velocity.x = snap.vx;
+    this.velocity.z = snap.vz;
+    this.radius = snap.radius;
+    this.volume = snap.volume ?? volumeFromRadius(snap.radius);
+    this.count = snap.count ?? this.count;
+    this._syncScale();
+    this.group.position.copy(this.position);
   }
 
   /** Sink stuck meshes into the core; convert their volume into the ball. */

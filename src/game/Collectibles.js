@@ -23,8 +23,11 @@ export class Collectibles {
   /** @param {import('./Game.js').Game} game */
   constructor(game) {
     this.game = game;
-    /** @type {{ mesh: THREE.Mesh, type: object, vx: number, vz: number }[]} */
+    /** @type {{ id: number, mesh: THREE.Mesh, type: object, vx: number, vz: number }[]} */
     this.items = [];
+    /** @type {Map<number, { id: number, mesh: THREE.Mesh, type: object, vx: number, vz: number }>} */
+    this.byId = new Map();
+    this._nextId = 1;
     this.root = new THREE.Group();
     game.scene.add(this.root);
   }
@@ -63,8 +66,12 @@ export class Collectibles {
         mesh.userData.typeId = type.id;
         mesh.userData.size = type.size;
         mesh.userData.alive = true;
+        const id = this._nextId++;
+        mesh.userData.propId = id;
         this.root.add(mesh);
-        this.items.push({ mesh, type, vx: 0, vz: 0 });
+        const item = { id, mesh, type, vx: 0, vz: 0 };
+        this.items.push(item);
+        this.byId.set(id, item);
         return true;
       }
       return false;
@@ -83,14 +90,33 @@ export class Collectibles {
       mesh.removeFromParent();
     }
     this.items.length = 0;
+    this.byId.clear();
+    this._nextId = 1;
+  }
+
+  /** Guest sync: remove scooped props by stable id. */
+  removeByIds(ids) {
+    for (const id of ids) {
+      const item = this.byId.get(id);
+      if (!item) continue;
+      item.mesh.userData.alive = false;
+      item.mesh.geometry?.dispose();
+      item.mesh.material?.dispose();
+      item.mesh.removeFromParent();
+      this.byId.delete(id);
+      const idx = this.items.indexOf(item);
+      if (idx >= 0) this.items.splice(idx, 1);
+    }
   }
 
   /**
-   * Slide loose props, then scoop or bonk against the ball.
+   * Slide loose props, then scoop or bonk against one or more balls.
    * @param {number} dt
-   * @param {import('./Katamari.js').Katamari} ball
+   * @param {import('./Katamari.js').Katamari | import('./Katamari.js').Katamari[]} ballOrBalls
+   * @param {{ onScoop?: (propId: number, type: object, ball: import('./Katamari.js').Katamari) => void }=} opts
    */
-  update(dt, ball) {
+  update(dt, ballOrBalls, opts = {}) {
+    const balls = Array.isArray(ballOrBalls) ? ballOrBalls : [ballOrBalls];
     const { objectFriction = 2.8, wallBounce = 0.4 } = this.game.tuning;
     const half = this.game.stage.floorSize * 0.5 - 0.5;
     const damp = Math.exp(-objectFriction * dt);
@@ -124,13 +150,16 @@ export class Collectibles {
       }
     }
 
-    this._resolveBall(ball);
+    for (const ball of balls) {
+      if (ball) this._resolveBall(ball, opts);
+    }
   }
 
   /**
    * @param {import('./Katamari.js').Katamari} ball
+   * @param {{ onScoop?: (propId: number, type: object, ball: import('./Katamari.js').Katamari) => void }} opts
    */
-  _resolveBall(ball) {
+  _resolveBall(ball, opts = {}) {
     const maxPick = ball.pickupSize;
     const br = ball.radius;
     const mBall = Math.max(0.25, ball.collisionMass);
@@ -150,17 +179,21 @@ export class Collectibles {
       let distSq = dx * dx + dz * dz;
       if (distSq > reach * reach) continue;
 
-      // Small enough → stick
       if (item.type.size <= maxPick) {
         item.mesh.userData.alive = false;
+        const propId = item.id;
+        const type = item.type;
+        this.byId.delete(propId);
         this.items.splice(i, 1);
-        ball.absorb(item.mesh, item.type);
-        this.game.audio?.shlurp(item.type.size);
-        this.game.onCollected?.(item.type);
+        ball.absorb(item.mesh, type);
+        if (opts.onScoop) opts.onScoop(propId, type, ball);
+        else {
+          this.game.audio?.shlurp(type.size);
+          this.game.onCollected?.(type);
+        }
         continue;
       }
 
-      // Too big → bonk (objects feel planted; ball is not an unstoppable plow)
       let dist = Math.sqrt(distSq);
       if (dist < 1e-5) {
         const a = Math.random() * Math.PI * 2;
@@ -174,7 +207,6 @@ export class Collectibles {
       const mObj = Math.max(0.5, item.type.mass * objScale + item.type.size * 1.2);
       const invSum = 1 / mBall + 1 / mObj;
 
-      // Positional separation (lighter body moves more)
       const overlap = reach - dist + 0.002;
       if (overlap > 0) {
         ball.position.x -= nx * overlap * ((1 / mBall) / invSum);
@@ -185,11 +217,9 @@ export class Collectibles {
         ball.group.position.z = ball.position.z;
       }
 
-      // Relative velocity of ball vs object along normal (ball → object)
       const rvx = ball.velocity.x - item.vx;
       const rvz = ball.velocity.z - item.vz;
       const velAlong = rvx * nx + rvz * nz;
-      // Approaching when ball moves toward object along n (velAlong > 0)
       if (velAlong <= 0) continue;
 
       const j = ((1 + e) * velAlong) / invSum;

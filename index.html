@@ -26,6 +26,8 @@
         </div>
       </div>
       <div id="hud-stage-name" class="hud-stage"></div>
+      <div id="hud-mp-roster" class="hud-mp-roster hidden"></div>
+      <div id="hud-mp-event" class="hud-mp-event hidden"></div>
       <div class="hud-hint">WASD / arrows to roll · scroll zoom · Esc pause</div>
     </div>
 
@@ -37,8 +39,45 @@
         <div class="cta-row">
           <button type="button" id="btn-play" class="btn primary">Start Rolling</button>
           <button type="button" id="btn-title-cosmos" class="btn">The Cosmos</button>
+          <button type="button" id="btn-mp" class="btn">Multiplayer</button>
         </div>
         <p class="controls-blurb">WASD or arrow keys · collect anything smaller than you</p>
+      </div>
+    </div>
+
+    <div id="mp-screen" class="overlay hidden">
+      <div class="overlay-panel">
+        <p class="eyebrow">Race + Battle</p>
+        <h2 class="brand cosmos-brand">Multiplayer</h2>
+        <p class="tagline">First to the size goal wins. Bump rivals to steal sticky volume.</p>
+        <div class="mp-form">
+          <label class="mp-label" for="mp-name">Your name</label>
+          <input id="mp-name" class="mp-input" type="text" maxlength="16" placeholder="Prince" autocomplete="off" />
+          <label class="mp-label" for="mp-code">Room code</label>
+          <input id="mp-code" class="mp-input" type="text" maxlength="8" placeholder="Join code" autocomplete="off" />
+        </div>
+        <p id="mp-status" class="mp-status">Host a room, or enter a code to join.</p>
+        <p id="mp-room-code" class="mp-room-code hidden"></p>
+        <div id="mp-roster" class="mp-roster" aria-live="polite"></div>
+        <div class="cta-row">
+          <button type="button" id="btn-mp-host" class="btn primary">Host room</button>
+          <button type="button" id="btn-mp-join" class="btn">Join</button>
+        </div>
+        <div class="cta-row">
+          <button type="button" id="btn-mp-start" class="btn primary hidden">Start match</button>
+          <button type="button" id="btn-mp-leave" class="btn">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="mp-result-screen" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2 id="mp-result-title">Match over</h2>
+        <p id="mp-result-message" class="tagline"></p>
+        <div id="mp-result-rankings" class="mp-rankings"></div>
+        <div class="cta-row">
+          <button type="button" id="btn-mp-result-title" class="btn primary">Title</button>
+        </div>
       </div>
     </div>
 

@@ -15,9 +15,10 @@ import {
   isStageUnlocked,
   clearProgress,
 } from './Progress.js';
+import { Multiplayer } from './Multiplayer.js';
 import { initDevPanel } from '../dev/DevPanel.js';
 
-/** @typedef {'title' | 'playing' | 'paused' | 'result' | 'present' | 'cosmos'} GameState */
+/** @typedef {'title' | 'playing' | 'paused' | 'mp-paused' | 'result' | 'present' | 'cosmos' | 'lobby' | 'mp-playing' | 'mp-result'} GameState */
 
 /**
  * Thin orchestrator — wires systems and owns the state machine.
@@ -50,6 +51,10 @@ export class Game {
     this._escWasDown = false;
     this._raf = 0;
     this._worldBuilt = false;
+    /** @type {Multiplayer | null} */
+    this.mp = null;
+    /** @type {import('./Katamari.js').Katamari[]} */
+    this.mpBalls = [];
   }
 
   init() {
@@ -139,8 +144,33 @@ export class Game {
       this.audio.unlockAndPlay();
       this.showCosmos();
     });
+    document.getElementById('btn-mp').addEventListener('click', () => {
+      this.audio.unlockAndPlay();
+      this.openMultiplayer();
+    });
+    document.getElementById('btn-mp-host').addEventListener('click', () => {
+      const name = /** @type {HTMLInputElement} */ (document.getElementById('mp-name')).value.trim();
+      this.mp?.createLobby(name);
+    });
+    document.getElementById('btn-mp-join').addEventListener('click', () => {
+      const name = /** @type {HTMLInputElement} */ (document.getElementById('mp-name')).value.trim();
+      const code = /** @type {HTMLInputElement} */ (document.getElementById('mp-code')).value.trim();
+      this.mp?.joinLobby(code, name);
+    });
+    document.getElementById('btn-mp-start').addEventListener('click', () => {
+      this.mp?.startMatch();
+    });
+    document.getElementById('btn-mp-leave').addEventListener('click', () => {
+      this.leaveMultiplayer();
+    });
+    document.getElementById('btn-mp-result-title').addEventListener('click', () => {
+      this.leaveMultiplayer();
+    });
     document.getElementById('btn-resume').addEventListener('click', () => this.resume());
-    document.getElementById('btn-quit').addEventListener('click', () => this.toTitle());
+    document.getElementById('btn-quit').addEventListener('click', () => {
+      if (this.mp) this.leaveMultiplayer();
+      else this.toTitle();
+    });
     document.getElementById('btn-sound').addEventListener('click', () => {
       this.ui.syncSoundSliders(this.audio.getMusicVolumePct(), this.audio.getSfxVolumePct());
       this.ui.showPausePanel('sound');
@@ -186,10 +216,7 @@ export class Game {
     this.ensureWorld();
     this.world.buildStage(this.stage);
 
-    if (this.ball) {
-      this.scene.remove(this.ball.group);
-      this.ball = null;
-    }
+    this.clearBalls();
     this.collectibles.clear();
     this.ball = new Katamari(this, this.stage.startRadius);
     this.collectCount = 0;
@@ -219,21 +246,96 @@ export class Game {
 
   toTitle() {
     this.state = 'title';
-    if (this.ball) {
-      this.scene.remove(this.ball.group);
-      this.ball = null;
-    }
+    this.clearBalls();
     this.collectibles?.clear();
     this.ui.showTitle();
     this.audio.stop();
   }
 
-  showCosmos() {
-    this.state = 'cosmos';
+  clearBalls() {
     if (this.ball) {
       this.scene.remove(this.ball.group);
       this.ball = null;
     }
+    for (const b of this.mpBalls) {
+      this.scene.remove(b.group);
+    }
+    this.mpBalls = [];
+  }
+
+  openMultiplayer() {
+    this.clearBalls();
+    this.collectibles?.clear();
+    this.mp = new Multiplayer(this);
+    this.state = 'lobby';
+    this.ui.showMpMenu();
+    this.audio.unlockAndPlay();
+    this.audio.duck(0.45);
+    this.audio.play();
+  }
+
+  async leaveMultiplayer() {
+    await this.mp?.leave();
+    this.mp = null;
+    this.clearBalls();
+    this.collectibles?.clear();
+    this.toTitle();
+  }
+
+  /**
+   * @param {object} stage
+   * @param {{ id: string, name: string, color: number }[]} players
+   */
+  beginMultiplayerStage(stage, players) {
+    this.stage = stage;
+    this.ensureWorld();
+    this.world.buildStage(this.stage);
+    this.clearBalls();
+    this.collectibles.clear();
+    this.collectibles.spawn();
+    this.timeLeft = this.stage.timeLimit;
+    this.collectCount = 0;
+
+    const n = players.length;
+    const ballsById = {};
+    players.forEach((p, i) => {
+      const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+      const r = 4 + n;
+      const ball = new Katamari(this, this.stage.startRadius, {
+        color: p.color,
+        spawnX: Math.cos(ang) * r,
+        spawnZ: Math.sin(ang) * r,
+      });
+      ballsById[p.id] = ball;
+      this.mpBalls.push(ball);
+    });
+    this.mp?.attachBalls(ballsById);
+    this.ball = this.mp?.localBall ?? this.mpBalls[0];
+
+    this.followCam.reset();
+    this.camera.position.set(0, 8, 12);
+    this.state = 'mp-playing';
+    this.ui.showPlaying(this.stage, { multiplayer: true });
+    this.clock.getDelta();
+    this.audio.unduck();
+    this.audio.play();
+  }
+
+  endMultiplayer(msg) {
+    this.state = 'mp-result';
+    const youWon = msg.winnerId === this.mp?.localId;
+    this.ui.showMpResult({
+      youWon,
+      reason: msg.reason,
+      rankings: msg.rankings,
+      stageName: this.stage?.name,
+    });
+    this.audio.duck(0.4);
+  }
+
+  showCosmos() {
+    this.state = 'cosmos';
+    this.clearBalls();
     this.collectibles?.clear();
     this.ui.showCosmos(
       this.stages,
@@ -249,15 +351,18 @@ export class Game {
   }
 
   pause() {
-    if (this.state !== 'playing') return;
-    this.state = 'paused';
+    if (this.state !== 'playing' && this.state !== 'mp-playing') return;
+    this.state = this.state === 'mp-playing' ? 'mp-paused' : 'paused';
     this.ui.showPause();
     this.audio.duck(0.3);
   }
 
   resume() {
-    if (this.state !== 'paused') return;
-    this.state = 'playing';
+    if (this.state === 'paused') {
+      this.state = 'playing';
+    } else if (this.state === 'mp-paused') {
+      this.state = 'mp-playing';
+    } else return;
     this.ui.hidePause();
     this.clock.getDelta();
     this.audio.unduck();
@@ -333,8 +438,8 @@ export class Game {
 
     const esc = this.input.isEscapePressed();
     if (esc && !this._escWasDown) {
-      if (this.state === 'playing') this.pause();
-      else if (this.state === 'paused') {
+      if (this.state === 'playing' || this.state === 'mp-playing') this.pause();
+      else if (this.state === 'paused' || this.state === 'mp-paused') {
         if (this.ui.pausePanel !== 'main') this.ui.showPausePanel('main');
         else this.resume();
       }
@@ -361,6 +466,23 @@ export class Game {
       } else if (this.timeLeft <= 0) {
         this.endStage(false);
       }
+    }
+
+    if (this.state === 'mp-playing' && this.mp && this.ball) {
+      const wishLocal = this.input.getMoveVector();
+      const wish = this.followCam.wishToWorld(wishLocal);
+      this.mp.update(dt, wish);
+      this.followCam.update(dt, this.ball, wish);
+      const roster = this.mp.players.map((p) => ({
+        name: p.name,
+        sizeCm: p.ball?.diameterCm ?? 0,
+        you: p.id === this.mp.localId,
+      }));
+      this.ui.updateHud(this.ball.diameterCm, Math.max(0, this.timeLeft), {
+        mode: 'size',
+        multiplayer: true,
+        roster,
+      });
     }
 
     this.renderer.render(this.scene, this.camera);

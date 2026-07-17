@@ -163,9 +163,12 @@ export class Game {
     document.getElementById('btn-mp-leave').addEventListener('click', () => {
       this.leaveMultiplayer();
     });
-    document.getElementById('btn-mp-result-title').addEventListener('click', () => {
-      this.leaveMultiplayer();
-    });
+    for (const btn of document.querySelectorAll('.mp-vote-btn')) {
+      btn.addEventListener('click', () => {
+        const vote = btn.getAttribute('data-vote');
+        if (vote) this.mp?.castVote(vote);
+      });
+    }
     document.getElementById('btn-resume').addEventListener('click', () => this.resume());
     document.getElementById('btn-quit').addEventListener('click', () => {
       if (this.mp) this.leaveMultiplayer();
@@ -323,6 +326,8 @@ export class Game {
 
   endMultiplayer(msg) {
     this.state = 'mp-result';
+    this.clearBalls();
+    this.collectibles?.clear();
     const youWon = msg.winnerId === this.mp?.localId;
     this.ui.showMpResult({
       youWon,
@@ -331,6 +336,14 @@ export class Game {
       stageName: this.stage?.name,
     });
     this.audio.duck(0.4);
+  }
+
+  /** After a Pause vote — keep the room, show lobby again. */
+  returnToMpLobby() {
+    this.state = 'lobby';
+    this.clearBalls();
+    this.collectibles?.clear();
+    this.audio.duck(0.45);
   }
 
   showCosmos() {
@@ -483,6 +496,10 @@ export class Game {
         multiplayer: true,
         roster,
       });
+    }
+
+    if (this.state === 'mp-result' && this.mp) {
+      this.mp.update(dt, { x: 0, z: 0 });
     }
 
     this.renderer.render(this.scene, this.camera);

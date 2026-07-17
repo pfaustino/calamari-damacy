@@ -1,16 +1,21 @@
-import { Katamari } from './Katamari.js';
 import { NetSession, MP_COLORS, MAX_PLAYERS } from './NetSession.js';
+
+const VOTE_SECONDS = 15;
+const VOTE_CHOICES = ['same', 'next', 'pause', 'leave'];
+/** Tie-break order when counts are equal (prefer rematch). */
+const VOTE_TIEBREAK = ['same', 'next', 'pause', 'leave'];
 
 /**
  * Online race + battle: host simulates; guests send input and apply snapshots.
  * Win: first to size goal, else biggest when time expires. Bump steals volume.
+ * After match: 15s vote (same / next / pause / leave); non-votes default to same.
  */
 export class Multiplayer {
   /** @param {import('./Game.js').Game} game */
   constructor(game) {
     this.game = game;
     this.net = new NetSession();
-    /** @type {'idle' | 'lobby' | 'playing' | 'ended'} */
+    /** @type {'idle' | 'lobby' | 'playing' | 'voting' | 'ended'} */
     this.phase = 'idle';
     /** @type {{ id: string, name: string, color: number, wish: {x:number,z:number}, ball: import('./Katamari.js').Katamari | null }[]} */
     this.players = [];
@@ -19,10 +24,20 @@ export class Multiplayer {
     this.isHost = false;
     this.stageId = null;
     this._stateAcc = 0;
-    this._removedProps = [];
+    this._scoops = [];
     this._events = [];
     this._status = '';
     this._inputAcc = 0;
+    /** @type {Set<number>} */
+    this._predictedScoopIds = new Set();
+    /** @type {Record<string, string>} */
+    this._votes = {};
+    this._voteLeft = 0;
+    this._voteSyncAcc = 0;
+    this._localVote = null;
+    this._resolving = false;
+    /** @type {Map<string, number>} */
+    this._scatterCooldown = new Map();
   }
 
   get localPlayer() {
@@ -167,7 +182,28 @@ export class Multiplayer {
     }
 
     if (msg.type === 'end') {
-      this._finish(msg);
+      this._enterVoting(msg);
+      return;
+    }
+
+    if (msg.type === 'vote' && this.isHost && this.phase === 'voting') {
+      if (VOTE_CHOICES.includes(msg.vote)) {
+        this._votes[from] = msg.vote;
+        this._broadcastVotes();
+        this._refreshVoteUi();
+      }
+      return;
+    }
+
+    if (msg.type === 'votes' && !this.isHost && this.phase === 'voting') {
+      this._votes = msg.votes || {};
+      this._voteLeft = msg.secondsLeft ?? this._voteLeft;
+      this._refreshVoteUi();
+      return;
+    }
+
+    if (msg.type === 'resolve') {
+      this._applyResolve(msg.decision, msg.stageId);
     }
   }
 
@@ -193,27 +229,45 @@ export class Multiplayer {
     });
   }
 
-  /** Host starts the match on a size-mode stage. */
-  startMatch() {
+  /** Host starts the match on a size-mode stage (or explicit stageId). */
+  startMatch(stageId = null) {
     if (!this.isHost || this.players.length < 2) return;
-    const stage =
-      this.game.stages.find((s) => (s.mode ?? 'size') === 'size') ?? this.game.stages[0];
+    const stage = stageId
+      ? this.game.stages.find((s) => s.id === stageId)
+      : this._sizeStages()[0] ?? this.game.stages[0];
+    const pick = stage ?? this.game.stages[0];
     const payload = {
       type: 'start',
-      stageId: stage.id,
+      stageId: pick.id,
       players: this.players.map((p) => ({ id: p.id, name: p.name, color: p.color })),
     };
     this.net.send(payload);
     this._beginMatch(payload);
   }
 
+  _sizeStages() {
+    return this.game.stages.filter((s) => (s.mode ?? 'size') === 'size');
+  }
+
+  _nextStageId() {
+    const list = this._sizeStages();
+    if (list.length === 0) return this.game.stages[0]?.id;
+    const idx = list.findIndex((s) => s.id === this.stageId);
+    return list[(idx + 1 + list.length) % list.length].id;
+  }
+
   _beginMatch(msg) {
     const stage = this.game.stages.find((s) => s.id === msg.stageId) ?? this.game.stages[0];
     this.stageId = stage.id;
     this.phase = 'playing';
-    this._removedProps = [];
+    this._scoops = [];
     this._events = [];
     this._stateAcc = 0;
+    this._predictedScoopIds.clear();
+    this._votes = {};
+    this._localVote = null;
+    this._resolving = false;
+    this._scatterCooldown.clear();
 
     this.players = (msg.players || this.players).map((p) => ({
       id: p.id,
@@ -233,10 +287,10 @@ export class Multiplayer {
     }
   }
 
-  /** Host: prop scooped — queue id for clients. */
-  onPropRemoved(propId) {
+  /** Host: prop scooped — queue for guests to stick visually. */
+  onPropScooped(propId, type, playerId) {
     if (!this.isHost) return;
-    this._removedProps.push(propId);
+    this._scoops.push({ propId, typeId: type.id, playerId });
   }
 
   onBumpSteal(attackerName, victimName, cm) {
@@ -250,6 +304,26 @@ export class Multiplayer {
    * @param {{ x: number, z: number }} localWish camera-relative already converted to world
    */
   update(dt, localWish) {
+    if (this.phase === 'voting') {
+      if (this.isHost && !this._resolving) {
+        this._voteLeft -= dt;
+        this._voteSyncAcc += dt;
+        if (this._voteSyncAcc >= 0.25) {
+          this._voteSyncAcc = 0;
+          this._broadcastVotes();
+        }
+        this._refreshVoteUi();
+        if (this._voteLeft <= 0) {
+          this._voteLeft = 0;
+          this._resolveVotes();
+        }
+      } else if (!this.isHost) {
+        this._voteLeft = Math.max(0, this._voteLeft - dt);
+        this._refreshVoteUi();
+      }
+      return;
+    }
+
     if (this.phase !== 'playing') return;
 
     const local = this.localPlayer;
@@ -261,11 +335,15 @@ export class Multiplayer {
         this._inputAcc = 0;
         this.net.send({ type: 'input', wish: localWish });
       }
-      // Predict local ball so movement + roll feel immediate
-      if (local?.ball) local.ball.update(dt, localWish);
+      // Predict local ball + scoops/bounces; melt remotes
+      if (local?.ball) {
+        local.ball.update(dt, localWish);
+        this.game.collectibles.predictGuest(dt, local.ball, this._predictedScoopIds);
+      }
       for (const p of this.players) {
         if (!p.ball || p.id === this.localId) continue;
         p.ball.smoothToNet(dt);
+        p.ball.tickVisuals(dt);
       }
       return;
     }
@@ -279,9 +357,9 @@ export class Multiplayer {
 
     this.game.collectibles.update(dt, balls, {
       onScoop: (propId, type, ball) => {
-        this.onPropRemoved(propId);
-        this.game.audio?.shlurp(type.size);
         const owner = this.players.find((pl) => pl.ball === ball);
+        this.onPropScooped(propId, type, owner?.id);
+        this.game.audio?.shlurp(type.size);
         if (owner) this.game.onMpCollected?.(owner.id, type);
       },
     });
@@ -359,12 +437,16 @@ export class Multiplayer {
           this.game.audio?.bonk(Math.min(1.5, velAlong / 5));
         }
 
-        // Steal: larger ball takes volume when impact is solid
         const impact = Math.abs(velAlong);
+        // Scatter sticky junk from both balls (host only; synced via events)
+        if (velAlong > 1.4 && impact > 1.4) {
+          this._scatterPair(list[i], list[j], nx, nz, impact);
+        }
+
+        // Steal: larger ball takes volume when impact is solid
         if (impact > 2.2) {
           const bigger = a.radius >= b.radius ? list[i] : list[j];
           const smaller = bigger === list[i] ? list[j] : list[i];
-          // Need meaningful size edge OR equal-ish brawl with high impact
           const ratio = bigger.ball.radius / Math.max(0.01, smaller.ball.radius);
           if (ratio >= 0.92) {
             const stealV = Math.min(
@@ -385,13 +467,58 @@ export class Multiplayer {
     }
   }
 
+  /**
+   * @param {{ id: string, name: string, ball: import('./Katamari.js').Katamari }} pa
+   * @param {{ id: string, name: string, ball: import('./Katamari.js').Katamari }} pb
+   */
+  _scatterPair(pa, pb, nx, nz, impact) {
+    const key = [pa.id, pb.id].sort().join(':');
+    const now = performance.now();
+    const last = this._scatterCooldown.get(key) ?? 0;
+    if (now - last < 450) return;
+    this._scatterCooldown.set(key, now);
+
+    const piecesA = pa.ball.scatterOnImpact(impact, -nx, -nz);
+    const piecesB = pb.ball.scatterOnImpact(impact, nx, nz);
+    const all = [];
+    for (const piece of piecesA) {
+      this.game.collectibles.addScattered(piece);
+      all.push({
+        playerId: pa.id,
+        typeId: piece.typeId,
+        propId: piece.propId,
+        x: piece.x,
+        z: piece.z,
+        vx: piece.vx,
+        vz: piece.vz,
+      });
+    }
+    for (const piece of piecesB) {
+      this.game.collectibles.addScattered(piece);
+      all.push({
+        playerId: pb.id,
+        typeId: piece.typeId,
+        propId: piece.propId,
+        x: piece.x,
+        z: piece.z,
+        vx: piece.vx,
+        vz: piece.vz,
+      });
+    }
+    if (all.length > 0) {
+      this._events.push({ kind: 'scatter', pieces: all });
+      this.game.ui.flashMpEvent?.('Sticky junk scattered!');
+      this.game.audio?.bonk(Math.min(1.6, impact / 4));
+    }
+  }
+
   _broadcastState() {
-    const removed = this._removedProps.splice(0, this._removedProps.length);
+    const scoops = this._scoops.splice(0, this._scoops.length);
     const events = this._events.splice(0, this._events.length);
     this.net.send({
       type: 'state',
       timeLeft: this.game.timeLeft,
-      removed,
+      scoops,
       events,
       players: this.players.map((p) => ({
         id: p.id,
@@ -409,11 +536,22 @@ export class Multiplayer {
 
   _applyState(msg) {
     this.game.timeLeft = msg.timeLeft;
+    // Legacy fallback
     if (msg.removed?.length) {
       this.game.collectibles.removeByIds(msg.removed);
     }
+    for (const scoop of msg.scoops || []) {
+      const p = this.players.find((pl) => pl.id === scoop.playerId);
+      this.game.collectibles.applyScoop(
+        scoop,
+        p?.ball,
+        this._predictedScoopIds,
+        true,
+      );
+    }
     for (const ev of msg.events || []) {
       if (ev.kind === 'steal') this.game.ui.flashMpEvent?.(ev.text);
+      if (ev.kind === 'scatter') this._applyScatterEvent(ev);
     }
     for (const snap of msg.players || []) {
       const p = this.players.find((pl) => pl.id === snap.id);
@@ -423,9 +561,36 @@ export class Multiplayer {
     }
   }
 
+  _applyScatterEvent(ev) {
+    this.game.ui.flashMpEvent?.('Sticky junk scattered!');
+    for (const piece of ev.pieces || []) {
+      const p = this.players.find((pl) => pl.id === piece.playerId);
+      if (p?.ball && piece.propId != null && piece.propId >= 0) {
+        const dropped = p.ball.dropStuckProp(piece.propId);
+        if (dropped?.mesh) {
+          dropped.mesh.geometry?.dispose?.();
+          if (dropped.mesh.material) {
+            if (Array.isArray(dropped.mesh.material)) {
+              dropped.mesh.material.forEach((m) => m.dispose?.());
+            } else dropped.mesh.material.dispose?.();
+          }
+          dropped.mesh.removeFromParent();
+        }
+      }
+      // Also clear predicted scoop tracking if this was ours
+      if (piece.propId != null) this._predictedScoopIds.delete(piece.propId);
+      this.game.collectibles.addScattered({
+        typeId: piece.typeId,
+        x: piece.x,
+        z: piece.z,
+        vx: piece.vx,
+        vz: piece.vz,
+      });
+    }
+  }
+
   _endMatch(winnerId, reason) {
     if (this.phase !== 'playing') return;
-    this.phase = 'ended';
     const rankings = [...this.players]
       .map((p) => ({
         id: p.id,
@@ -435,14 +600,114 @@ export class Multiplayer {
         you: p.id === this.localId,
       }))
       .sort((a, b) => b.sizeCm - a.sizeCm);
-    const payload = { type: 'end', winnerId, reason, rankings };
+    const payload = {
+      type: 'end',
+      winnerId,
+      reason,
+      rankings,
+      voteSeconds: VOTE_SECONDS,
+      stageId: this.stageId,
+    };
     if (this.isHost) this.net.send(payload);
-    this._finish(payload);
+    this._enterVoting(payload);
   }
 
-  _finish(msg) {
-    this.phase = 'ended';
+  _enterVoting(msg) {
+    this.phase = 'voting';
+    this._votes = {};
+    this._localVote = null;
+    this._voteLeft = msg.voteSeconds ?? VOTE_SECONDS;
+    this._voteSyncAcc = 0;
+    this._resolving = false;
+    if (msg.stageId) this.stageId = msg.stageId;
     this.game.endMultiplayer(msg);
+    if (this.isHost) this._broadcastVotes();
+    this._refreshVoteUi();
+  }
+
+  castVote(vote) {
+    if (this.phase !== 'voting' || !VOTE_CHOICES.includes(vote)) return;
+    this._localVote = vote;
+    this._votes[this.localId] = vote;
+    if (this.isHost) {
+      this._broadcastVotes();
+    } else {
+      this.net.send({ type: 'vote', vote });
+    }
+    this._refreshVoteUi();
+  }
+
+  _broadcastVotes() {
+    this.net.send({
+      type: 'votes',
+      votes: { ...this._votes },
+      secondsLeft: Math.max(0, this._voteLeft),
+    });
+  }
+
+  _refreshVoteUi() {
+    this.game.ui.updateMpVote({
+      secondsLeft: this._voteLeft,
+      localVote: this._localVote,
+      votes: this.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        vote: this._votes[p.id] ?? null,
+        you: p.id === this.localId,
+      })),
+    });
+  }
+
+  _tallyVotes() {
+    const counts = { same: 0, next: 0, pause: 0, leave: 0 };
+    for (const p of this.players) {
+      const v = this._votes[p.id] || 'same';
+      if (counts[v] != null) counts[v] += 1;
+      else counts.same += 1;
+    }
+    let best = 'same';
+    let bestN = -1;
+    for (const key of VOTE_TIEBREAK) {
+      if (counts[key] > bestN) {
+        bestN = counts[key];
+        best = key;
+      }
+    }
+    return best;
+  }
+
+  _resolveVotes() {
+    if (!this.isHost || this._resolving) return;
+    this._resolving = true;
+    const decision = this._tallyVotes();
+    let stageId = this.stageId;
+    if (decision === 'next') stageId = this._nextStageId();
+    else if (decision === 'same') stageId = this.stageId;
+    this.net.send({ type: 'resolve', decision, stageId });
+    this._applyResolve(decision, stageId);
+  }
+
+  _applyResolve(decision, stageId) {
+    this._resolving = true;
+    if (decision === 'leave') {
+      this.game.leaveMultiplayer();
+      return;
+    }
+    if (decision === 'pause') {
+      this.phase = 'lobby';
+      this._votes = {};
+      this._localVote = null;
+      this._status = 'Paused — host can start when ready.';
+      this.game.returnToMpLobby();
+      this._refreshLobby();
+      return;
+    }
+    if (this.isHost) {
+      this.startMatch(stageId || this.stageId);
+    }
+    // Guests wait for host's `start` message (already sent inside startMatch for host;
+    // for guest, resolve arrives then start may arrive separately — host startMatch sends start)
   }
 
   async leave() {
@@ -451,5 +716,7 @@ export class Multiplayer {
     this.players = [];
     this.localId = null;
     this.roomCode = null;
+    this._votes = {};
+    this._localVote = null;
   }
 }

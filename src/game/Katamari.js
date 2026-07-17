@@ -220,17 +220,23 @@ export class Katamari {
     this._syncScale();
 
     const err = Math.hypot(snap.x - this.position.x, snap.z - this.position.z);
-    if (err > 3.5) {
+    const velErr = Math.hypot(snap.vx - this.velocity.x, snap.vz - this.velocity.z);
+    const velDot =
+      snap.vx * this.velocity.x +
+      snap.vz * this.velocity.z;
+    const bonkReversal = velDot < 0 && velErr > 1.2;
+
+    if (err > 3.5 || bonkReversal) {
       this.applyNetState(snap);
       return;
     }
-    // Gentle pull — keep predicted motion / quaternion
-    const blend = Math.min(0.35, 0.12 + err * 0.08);
+
+    const blend = Math.min(0.55, 0.1 + err * 0.07 + velErr * 0.08);
     this.position.x += (snap.x - this.position.x) * blend;
     this.position.z += (snap.z - this.position.z) * blend;
     this.velocity.x += (snap.vx - this.velocity.x) * blend;
     this.velocity.z += (snap.vz - this.velocity.z) * blend;
-    this.position.y = this.radius + this._bumpY;
+    this.position.y = snap.y ?? this.radius + this._bumpY;
     this.group.position.copy(this.position);
   }
 
@@ -267,9 +273,13 @@ export class Katamari {
     const { meltDuration } = this.game.tuning;
     const duration = Math.max(0.35, meltDuration);
 
+    // Objects stay full-size on the surface until the final stretch, then
+    // shrink + sink so they visibly melt away right at meltDuration.
+    const MELT_VISUAL_START = 0.8;
+
     for (let i = this.stuck.length - 1; i >= 0; i--) {
       const s = this.stuck[i];
-      const rate = (1 / duration) * (1.15 / (0.85 + s.mass * 0.25));
+      const rate = 1 / duration;
       const prev = s.melt;
       s.melt = Math.min(1, s.melt + rate * dt);
       const gained = s.melt - prev;
@@ -280,14 +290,18 @@ export class Katamari {
         s.volumeLeft = Math.max(0, s.volumeLeft - drain);
       }
 
-      const remain = 1 - s.melt;
-      const scaleMul = 0.2 + 0.8 * remain;
+      // visRemain holds at 1 (visible on surface) then ramps to 0 near the end
+      const visRemain =
+        s.melt <= MELT_VISUAL_START
+          ? 1
+          : 1 - (s.melt - MELT_VISUAL_START) / (1 - MELT_VISUAL_START);
+      const scaleMul = 0.2 + 0.8 * visRemain;
       s.mesh.scale.set(
         s.baseScale.x * scaleMul,
         s.baseScale.y * scaleMul,
         s.baseScale.z * scaleMul,
       );
-      s.mesh.position.copy(s.dir).multiplyScalar(this.radius * (0.25 + 0.7 * remain));
+      s.mesh.position.copy(s.dir).multiplyScalar(this.radius * (0.25 + 0.7 * visRemain));
 
       if (s.melt >= 1) {
         if (s.volumeLeft > 0) {
@@ -420,8 +434,9 @@ export class Katamari {
    * Scoop: stick on the surface. Volume is granted as the object melts inward.
    * @param {THREE.Object3D} mesh
    * @param {object} typeDef
+   * @param {{ visualOnly?: boolean }=} opts visualOnly = stickies without size (net guest)
    */
-  absorb(mesh, typeDef) {
+  absorb(mesh, typeDef, opts = {}) {
     this.group.attach(mesh);
     const local = mesh.position;
     if (local.lengthSq() < 1e-6) local.set(0, 1, 0);
@@ -431,7 +446,7 @@ export class Katamari {
 
     const baseScale = mesh.scale.clone();
     const packing = this.game.tuning.volumePacking ?? 0.45;
-    const volumeLeft = objectPackedVolume(typeDef.size, packing);
+    const volumeLeft = opts.visualOnly ? 0 : objectPackedVolume(typeDef.size, packing);
 
     this.stuck.push({
       mesh,
@@ -441,9 +456,123 @@ export class Katamari {
       volumeLeft,
       baseScale,
       dir,
+      propId: mesh.userData.propId ?? -1,
+      typeId: typeDef.id,
+      visualOnly: Boolean(opts.visualOnly),
+      packedVolume: opts.visualOnly ? 0 : objectPackedVolume(typeDef.size, packing),
     });
 
-    this.count += 1;
-    this.massCollected += typeDef.mass;
+    if (!opts.visualOnly) {
+      this.count += 1;
+      this.massCollected += typeDef.mass;
+    }
+  }
+
+  hasAbsorbedProp(propId) {
+    if (propId == null || propId < 0) return false;
+    return this.stuck.some((s) => s.propId === propId);
+  }
+
+  /**
+   * Knock loose stickies that are still mostly solid (melt &lt; 50%).
+   * Faster impact → more pieces. Flies up to 5× ball radius.
+   * @param {number} impact closing speed along collision normal
+   * @param {number} awayNx outward X (away from other ball)
+   * @param {number} awayNz outward Z
+   * @returns {{ typeId: string, propId: number, x: number, z: number, vx: number, vz: number, mesh: THREE.Object3D, typeSize: number }[]}
+   */
+  scatterOnImpact(impact, awayNx, awayNz) {
+    const eligible = [];
+    for (let i = 0; i < this.stuck.length; i++) {
+      // Still under halfway melted → can scatter; half-melted+ are immune
+      if (this.stuck[i].melt < 0.5) eligible.push(i);
+    }
+    if (eligible.length === 0 || impact < 1.2) return [];
+
+    const strength = Math.min(1, Math.max(0, (impact - 1.2) / 7));
+    let count = Math.round(eligible.length * strength);
+    if (strength > 0.12 && count < 1) count = 1;
+    count = Math.min(count, eligible.length);
+    if (count <= 0) return [];
+
+    // Fisher–Yates pick of indices (highest index first when splicing)
+    for (let i = eligible.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const tmp = eligible[i];
+      eligible[i] = eligible[j];
+      eligible[j] = tmp;
+    }
+    const pick = eligible.slice(0, count).sort((a, b) => b - a);
+    const maxDist = this.radius * 5;
+    const out = [];
+    const len = Math.hypot(awayNx, awayNz) || 1;
+    const basex = awayNx / len;
+    const basez = awayNz / len;
+
+    for (const idx of pick) {
+      const s = this.stuck[idx];
+      const mesh = s.mesh;
+      mesh.removeFromParent();
+      this.game.scene.add(mesh);
+      mesh.scale.copy(s.baseScale);
+      mesh.quaternion.identity();
+
+      if (!s.visualOnly && s.packedVolume > 0) {
+        const absorbed = Math.max(0, s.packedVolume - s.volumeLeft);
+        if (absorbed > 0) this.removeVolume(absorbed);
+        this.count = Math.max(0, this.count - 1);
+        this.massCollected = Math.max(0, this.massCollected - s.mass);
+      }
+
+      const spread = (Math.random() - 0.5) * Math.PI * 0.95;
+      const cx = Math.cos(spread);
+      const cz = Math.sin(spread);
+      const dx = basex * cx - basez * cz;
+      const dz = basex * cz + basez * cx;
+      const fly = (0.35 + 0.65 * Math.random()) * maxDist * (0.4 + 0.6 * strength);
+      const speed = (2.2 + impact * 0.85) * (0.55 + 0.45 * Math.random());
+      const x = this.position.x + dx * (this.radius + s.size * 0.5 + 0.15);
+      const z = this.position.z + dz * (this.radius + s.size * 0.5 + 0.15);
+      mesh.position.set(x, s.size * 0.35, z);
+      mesh.userData.alive = true;
+      mesh.userData.typeId = s.typeId;
+      mesh.userData.size = s.size;
+
+      this.stuck.splice(idx, 1);
+      out.push({
+        typeId: s.typeId,
+        propId: s.propId,
+        x,
+        z,
+        vx: dx * speed,
+        vz: dz * speed,
+        mesh,
+        typeSize: s.size,
+      });
+    }
+
+    this._syncScale();
+    this.position.y = this.radius + this._bumpY;
+    this.group.position.copy(this.position);
+    return out;
+  }
+
+  /** Guest: drop a sticky by propId without touching volume (size comes from net). */
+  dropStuckProp(propId) {
+    if (propId == null || propId < 0) return null;
+    const idx = this.stuck.findIndex((s) => s.propId === propId);
+    if (idx < 0) return null;
+    const s = this.stuck[idx];
+    const mesh = s.mesh;
+    mesh.removeFromParent();
+    this.stuck.splice(idx, 1);
+    return { mesh, typeId: s.typeId, size: s.size };
+  }
+
+  /** Advance melt / stuck visuals without motion (remote balls on guest). */
+  tickVisuals(dt) {
+    this._updateMelt(dt);
+    this.position.y = this.radius + this._bumpY;
+    this.group.position.y = this.position.y;
   }
 }

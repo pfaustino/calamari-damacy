@@ -106,6 +106,51 @@ export class UI {
       row.textContent = `${i + 1}. ${r.name} — ${r.sizeCm} cm · ${r.count} objects`;
       box.appendChild(row);
     });
+    for (const btn of document.querySelectorAll('.mp-vote-btn')) {
+      btn.classList.remove('selected');
+    }
+  }
+
+  /**
+   * @param {{
+   *   secondsLeft: number,
+   *   votes: { id: string, name: string, color: number, vote: string | null, you: boolean }[],
+   *   localVote: string | null,
+   * }} state
+   */
+  updateMpVote(state) {
+    const sec = Math.max(0, Math.ceil(state.secondsLeft ?? 0));
+    const cd = document.getElementById('mp-vote-countdown');
+    if (cd) {
+      cd.textContent =
+        sec > 0 ? `Next race in ${sec}…` : 'Starting…';
+    }
+    const board = document.getElementById('mp-vote-board');
+    if (board) {
+      const labels = {
+        same: 'Same stage',
+        next: 'Next stage',
+        pause: 'Pause',
+        leave: 'Leave',
+      };
+      board.innerHTML = '';
+      for (const v of state.votes || []) {
+        const row = document.createElement('div');
+        row.className = `mp-vote-row${v.you ? ' you' : ''}`;
+        const name = document.createElement('span');
+        name.textContent = `${v.name}${v.you ? ' (you)' : ''}`;
+        const choice = document.createElement('span');
+        choice.className = 'mp-vote-choice-label';
+        choice.textContent = v.vote ? labels[v.vote] || v.vote : '— (defaults to Same)';
+        row.appendChild(name);
+        row.appendChild(choice);
+        board.appendChild(row);
+      }
+    }
+    for (const btn of document.querySelectorAll('.mp-vote-btn')) {
+      const vote = btn.getAttribute('data-vote');
+      btn.classList.toggle('selected', vote === state.localVote);
+    }
   }
 
   flashMpEvent(text) {

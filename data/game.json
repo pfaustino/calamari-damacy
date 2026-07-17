@@ -13,7 +13,7 @@
     "wallBounce": 0.4,
     "pickupRatio": 0.72,
     "volumePacking": 1.15,
-    "meltDuration": 20,
+    "meltDuration": 40,
     "protrusionInertia": 1.6,
     "scrapeFriction": 0.08,
     "scrapeMassCap": 1.5,

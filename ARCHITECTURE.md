@@ -4,7 +4,7 @@
 
 `title` → `playing` ⇄ `paused` → `result` → (`present` → `cosmos` | retry `playing`) → …
 
-Multiplayer: `title` → `lobby` → `mp-playing` ⇄ `mp-paused` → `mp-result` → `title`  
+Multiplayer: `title` → `lobby` → `mp-playing` ⇄ `mp-paused` → `mp-result` (15s vote) → rematch / lobby pause / leave  
 Host simulates via PeerJS; guests send wish input and apply state snapshots.
 
 Owned by `src/game/Game.js` (orchestrator only).

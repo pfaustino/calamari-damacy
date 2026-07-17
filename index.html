@@ -75,8 +75,14 @@
         <h2 id="mp-result-title">Match over</h2>
         <p id="mp-result-message" class="tagline"></p>
         <div id="mp-result-rankings" class="mp-rankings"></div>
-        <div class="cta-row">
-          <button type="button" id="btn-mp-result-title" class="btn primary">Title</button>
+        <p id="mp-vote-countdown" class="mp-vote-countdown">Next race in 15…</p>
+        <p class="mp-vote-hint">Vote for what happens next. Non-votes = same stage.</p>
+        <div id="mp-vote-board" class="mp-vote-board" aria-live="polite"></div>
+        <div class="mp-vote-choices" role="group" aria-label="Post-match vote">
+          <button type="button" class="btn primary mp-vote-btn" data-vote="same">Same stage</button>
+          <button type="button" class="btn mp-vote-btn" data-vote="next">Next stage</button>
+          <button type="button" class="btn mp-vote-btn" data-vote="pause">Pause</button>
+          <button type="button" class="btn mp-vote-btn" data-vote="leave">Leave</button>
         </div>
       </div>
     </div>

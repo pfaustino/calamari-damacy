@@ -34,33 +34,45 @@ export class Collectibles {
     const { stage, objectTypes } = this.game;
     const rng = createRng(stage.seed);
     const half = stage.floorSize * 0.5 - 2;
+    const isCollect = stage.mode === 'collect' && stage.collectType;
+    const collectType = isCollect
+      ? objectTypes.find((t) => t.id === stage.collectType)
+      : null;
+    const guaranteed =
+      isCollect && collectType
+        ? Math.max(stage.collectGoal * 2, stage.collectGoal + 8)
+        : 0;
 
-    for (let i = 0; i < stage.spawnCount; i++) {
-      const type = pickWeighted(rng, objectTypes);
-      const geo = makeGeometry(type.shape, type.size);
-      const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(type.color),
-        roughness: 0.65,
-        metalness: 0.08,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+    const placeOne = (type) => {
+      for (let tries = 0; tries < 40; tries++) {
+        const x = (rng() * 2 - 1) * half;
+        const z = (rng() * 2 - 1) * half;
+        if (Math.hypot(x, z) < 2.5) continue;
 
-      const x = (rng() * 2 - 1) * half;
-      const z = (rng() * 2 - 1) * half;
-      if (Math.hypot(x, z) < 2.5) {
-        i -= 1;
-        continue;
+        const geo = makeGeometry(type.shape, type.size);
+        const mat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(type.color),
+          roughness: 0.65,
+          metalness: 0.08,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.position.set(x, type.size * 0.35, z);
+        mesh.rotation.y = rng() * Math.PI * 2;
+        mesh.userData.typeId = type.id;
+        mesh.userData.size = type.size;
+        mesh.userData.alive = true;
+        this.root.add(mesh);
+        this.items.push({ mesh, type, vx: 0, vz: 0 });
+        return true;
       }
-      mesh.position.set(x, type.size * 0.35, z);
-      mesh.rotation.y = rng() * Math.PI * 2;
-      mesh.userData.typeId = type.id;
-      mesh.userData.size = type.size;
-      mesh.userData.alive = true;
+      return false;
+    };
 
-      this.root.add(mesh);
-      this.items.push({ mesh, type, vx: 0, vz: 0 });
+    for (let i = 0; i < guaranteed; i++) placeOne(collectType);
+    for (let i = 0; i < stage.spawnCount; i++) {
+      placeOne(pickWeighted(rng, objectTypes));
     }
   }
 
@@ -144,6 +156,7 @@ export class Collectibles {
         this.items.splice(i, 1);
         ball.absorb(item.mesh, item.type);
         this.game.audio?.shlurp(item.type.size);
+        this.game.onCollected?.(item.type);
         continue;
       }
 

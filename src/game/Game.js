@@ -46,6 +46,7 @@ export class Game {
     this.audio = new AudioManager();
 
     this.timeLeft = 0;
+    this.collectCount = 0;
     this._escWasDown = false;
     this._raf = 0;
     this._worldBuilt = false;
@@ -191,6 +192,7 @@ export class Game {
     }
     this.collectibles.clear();
     this.ball = new Katamari(this, this.stage.startRadius);
+    this.collectCount = 0;
     this.collectibles.spawn();
     this.timeLeft = this.stage.timeLimit;
     this.followCam.reset();
@@ -200,6 +202,19 @@ export class Game {
     this.clock.getDelta();
     this.audio.unduck();
     this.audio.play();
+  }
+
+  onCollected(type) {
+    if (this.stage?.mode !== 'collect') return;
+    if (type?.id !== this.stage.collectType) return;
+    this.collectCount += 1;
+  }
+
+  isMissionComplete() {
+    if (this.stage?.mode === 'collect') {
+      return this.collectCount >= (this.stage.collectGoal ?? 0);
+    }
+    return (this.ball?.diameterCm ?? 0) >= (this.stage?.goalCm ?? Infinity);
   }
 
   toTitle() {
@@ -252,11 +267,12 @@ export class Game {
   endStage(forceWin = false) {
     if (this.state !== 'playing' && !forceWin) return;
     const sizeCm = this.ball?.diameterCm ?? 0;
-    const won = forceWin || sizeCm >= this.stage.goalCm;
+    const won = forceWin || this.isMissionComplete();
     this._lastResult = {
       won,
       sizeCm,
       count: this.ball?.count ?? 0,
+      collectCount: this.collectCount ?? 0,
       timeLeft: this.timeLeft,
     };
     this.state = 'result';
@@ -265,6 +281,10 @@ export class Game {
       sizeCm,
       goalCm: this.stage.goalCm,
       count: this._lastResult.count,
+      collectCount: this._lastResult.collectCount,
+      collectGoal: this.stage.collectGoal,
+      collectType: this.stage.collectType,
+      mode: this.stage.mode ?? 'size',
       timeLeft: this.timeLeft,
       stageName: this.stage.name,
       kingLine: this.pickKingLine(won ? 'kingPraise' : 'kingFailure'),
@@ -329,9 +349,14 @@ export class Game {
       this.followCam.update(dt, this.ball, wish);
 
       this.timeLeft -= dt;
-      this.ui.updateHud(this.ball.diameterCm, Math.max(0, this.timeLeft));
+      this.ui.updateHud(this.ball.diameterCm, Math.max(0, this.timeLeft), {
+        mode: this.stage.mode ?? 'size',
+        collectCount: this.collectCount,
+        collectGoal: this.stage.collectGoal,
+        collectType: this.stage.collectType,
+      });
 
-      if (this.ball.diameterCm >= this.stage.goalCm) {
+      if (this.isMissionComplete()) {
         this.endStage(true);
       } else if (this.timeLeft <= 0) {
         this.endStage(false);

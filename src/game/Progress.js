@@ -21,8 +21,9 @@ export function saveProgress(progress) {
   localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
 }
 
-/** A stage is playable if it's the first, or the previous one is completed. */
+/** A stage is playable if cleared before, first in list, or previous is completed. */
 export function isStageUnlocked(stages, progress, stageId) {
+  if (progress.completed.includes(stageId)) return true;
   const idx = stages.findIndex((s) => s.id === stageId);
   if (idx <= 0) return true;
   return progress.completed.includes(stages[idx - 1].id);

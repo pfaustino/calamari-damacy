@@ -76,11 +76,23 @@ export class World {
         sandB: [0.78, 0.54, 0.66],
         rim: 0x9b5de5,
       },
+      'beach-town': {
+        sky: 0x8ecae6,
+        sandA: [0.95, 0.88, 0.7],
+        sandB: [0.9, 0.8, 0.62],
+        rim: 0x219ebc,
+      },
       harbor: {
         sky: 0x8aa1b5,
         sandA: [0.48, 0.47, 0.43],
         sandB: [0.36, 0.36, 0.34],
         rim: 0x5c6f7b,
+      },
+      boardwalk: {
+        sky: 0xf4a261,
+        sandA: [0.55, 0.42, 0.32],
+        sandB: [0.42, 0.32, 0.26],
+        rim: 0xe76f51,
       },
     };
     return themes[themeId] ?? themes['tide-pool'];
@@ -140,8 +152,12 @@ export class World {
   _createSetDressing(size, themeId) {
     if (themeId === 'coral-reef') {
       this._scatterCoral(size);
+    } else if (themeId === 'beach-town') {
+      this._buildBeachTown(size);
     } else if (themeId === 'harbor') {
       this._buildHarbor(size);
+    } else if (themeId === 'boardwalk') {
+      this._buildBoardwalk(size);
     } else {
       this._scatterTideRocks(size);
     }
@@ -209,6 +225,71 @@ export class World {
       coil.position.set(Math.cos(a) * r, 0.08, Math.sin(a) * r);
       coil.rotation.x = Math.PI / 2;
       this.root.add(coil);
+    }
+  }
+
+  _buildBeachTown(size) {
+    const canvas = new THREE.MeshStandardMaterial({ color: 0xff8fab, roughness: 0.75 });
+    const pole = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.6 });
+    const towelColors = [0x00bbf9, 0xfee440, 0xff6b6b, 0x9b5de5];
+    for (let i = 0; i < 14; i++) {
+      const umb = new THREE.Group();
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.4, 8), pole);
+      stick.position.y = 1.2;
+      const shade = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.55, 10, 1, true), canvas.clone());
+      shade.position.y = 2.35;
+      shade.material.color.setHex(towelColors[i % towelColors.length]);
+      umb.add(stick, shade);
+      const a = i * 2.45;
+      const r = size * (0.24 + (i % 5) * 0.04);
+      umb.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      this.root.add(umb);
+    }
+    for (let i = 0; i < 20; i++) {
+      const towel = new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 0.05, 0.7),
+        new THREE.MeshStandardMaterial({ color: towelColors[i % towelColors.length], roughness: 0.95 }),
+      );
+      const a = i * 1.9 + 0.4;
+      const r = size * (0.2 + (i % 7) * 0.03);
+      towel.position.set(Math.cos(a) * r, 0.03, Math.sin(a) * r);
+      towel.rotation.y = a;
+      this.root.add(towel);
+    }
+  }
+
+  _buildBoardwalk(size) {
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8d6e4f, roughness: 0.88 });
+    const neon = [0xff006e, 0x8338ec, 0x3a86ff, 0xffbe0b];
+    for (let row = 0; row < 5; row++) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(size * 0.55, 0.16, 2.2), wood.clone());
+      plank.position.set(0, 0.1, -size * 0.28 + row * 2.4);
+      plank.receiveShadow = true;
+      plank.castShadow = true;
+      this.root.add(plank);
+    }
+    for (let i = 0; i < 12; i++) {
+      const booth = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2, 2.4, 2.2),
+        new THREE.MeshStandardMaterial({ color: neon[i % neon.length], roughness: 0.55 }),
+      );
+      const side = i % 2 === 0 ? -1 : 1;
+      booth.position.set(side * size * 0.22, 1.2, -size * 0.18 + Math.floor(i / 2) * 3.2);
+      booth.castShadow = true;
+      this.root.add(booth);
+    }
+    for (let i = 0; i < 10; i++) {
+      const light = new THREE.Mesh(
+        new THREE.SphereGeometry(0.28, 10, 8),
+        new THREE.MeshStandardMaterial({
+          color: neon[i % neon.length],
+          emissive: neon[i % neon.length],
+          emissiveIntensity: 0.55,
+          roughness: 0.4,
+        }),
+      );
+      light.position.set((i - 4.5) * 2.2, 3.2, -size * 0.3);
+      this.root.add(light);
     }
   }
 }

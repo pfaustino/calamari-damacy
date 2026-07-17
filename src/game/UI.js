@@ -43,7 +43,12 @@ export class UI {
   showPlaying(stage) {
     this.hideAllOverlays();
     this.hud.classList.remove('hidden');
-    this.sizeGoal.textContent = `Goal ${stage.goalCm} cm`;
+    if (stage.mode === 'collect') {
+      const label = stage.collectType ?? 'item';
+      this.sizeGoal.textContent = `Collect ${stage.collectGoal} ${label}s`;
+    } else {
+      this.sizeGoal.textContent = `Goal ${stage.goalCm} cm`;
+    }
     this.stageName.textContent = stage.name;
   }
 
@@ -75,23 +80,42 @@ export class UI {
     if (sfxVal) sfxVal.textContent = `${sfxPct}%`;
   }
 
-  showResult({ won, sizeCm, goalCm, count, timeLeft, stageName, kingLine }) {
+  showResult({
+    won,
+    sizeCm,
+    goalCm,
+    count,
+    collectCount = 0,
+    collectGoal = 0,
+    collectType = 'item',
+    mode = 'size',
+    timeLeft,
+    stageName,
+    kingLine,
+  }) {
     this.hideAllOverlays();
     this.result.classList.remove('hidden');
     if (won) {
       this.resultTitle.textContent = 'Mission complete!';
       this.resultMessage.textContent =
-        `${kingLine} You rolled a ${sizeCm} cm calamari in ${stageName}.`;
+        mode === 'collect'
+          ? `${kingLine} You scooped ${collectCount} ${collectType}s in ${stageName}.`
+          : `${kingLine} You rolled a ${sizeCm} cm calamari in ${stageName}.`;
       this.resultPrimary.textContent = 'Present to the King';
     } else {
-      this.resultTitle.textContent = 'Too small…';
+      this.resultTitle.textContent = mode === 'collect' ? 'Not enough…' : 'Too small…';
       this.resultMessage.textContent =
         timeLeft <= 0
           ? kingLine
-          : 'Keep rolling — anything smaller than you sticks.';
+          : mode === 'collect'
+            ? `Keep hunting ${collectType}s.`
+            : 'Keep rolling — anything smaller than you sticks.';
       this.resultPrimary.textContent = 'Try Again';
     }
-    this.resultStats.textContent = `${sizeCm} cm · ${count} objects · goal ${goalCm} cm`;
+    this.resultStats.textContent =
+      mode === 'collect'
+        ? `${collectCount}/${collectGoal} ${collectType}s · ${sizeCm} cm · ${count} objects`
+        : `${sizeCm} cm · ${count} objects · goal ${goalCm} cm`;
   }
 
   showPresent({ starName, kingPraise, sizeCm, count }) {
@@ -144,7 +168,9 @@ export class UI {
         <span class="stage-card-name">${stage.name}</span>
         <span class="stage-card-meta">${
           unlocked
-            ? `${stage.blurb} · Goal ${stage.goalCm} cm`
+            ? stage.mode === 'collect'
+              ? `${stage.blurb} · Collect ${stage.collectGoal} ${stage.collectType}s`
+              : `${stage.blurb} · Goal ${stage.goalCm} cm`
             : 'Locked — clear the previous mission'
         }</span>
       `;
@@ -155,8 +181,14 @@ export class UI {
     }
   }
 
-  updateHud(sizeCm, timeSec) {
+  updateHud(sizeCm, timeSec, mission = {}) {
     this.sizeValue.textContent = `${sizeCm} cm`;
+    if (mission.mode === 'collect') {
+      const n = mission.collectCount ?? 0;
+      const goal = mission.collectGoal ?? 0;
+      const label = mission.collectType ?? 'item';
+      this.sizeGoal.textContent = `${label}s ${n}/${goal}`;
+    }
     const m = Math.floor(timeSec / 60);
     const s = Math.floor(timeSec % 60);
     this.timerValue.textContent = `${m}:${s.toString().padStart(2, '0')}`;

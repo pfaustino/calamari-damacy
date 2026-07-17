@@ -4,6 +4,7 @@
       "id": "tide-pool-1",
       "name": "Tide Pool",
       "blurb": "The King needs a small sticky star. Roll the shallows.",
+      "mode": "size",
       "timeLimit": 300,
       "goalCm": 40,
       "startRadius": 0.45,
@@ -28,6 +29,7 @@
       "id": "reef-2",
       "name": "Coral Reef",
       "blurb": "Bigger waters. Bigger ambitions. Make a proper reef-star.",
+      "mode": "size",
       "timeLimit": 330,
       "goalCm": 60,
       "startRadius": 0.55,
@@ -49,9 +51,62 @@
       ]
     },
     {
+      "id": "beach-town-4",
+      "name": "Beach Town",
+      "blurb": "Umbrellas, towels, and tourist clutter. Roll the shoreline.",
+      "mode": "size",
+      "timeLimit": 340,
+      "goalCm": 90,
+      "startRadius": 0.6,
+      "floorSize": 105,
+      "spawnCount": 1450,
+      "seed": 9090,
+      "theme": "beach-town",
+      "starName": "Sunscreen Nova",
+      "kingIntro": "Mortals leave nonsense on the sand. Harvest it. Beautifully.",
+      "kingPraise": [
+        "A sunburnt sphere of vacation debris! The cosmos is now on holiday.",
+        "Sticky, sandy, faintly coconut-scented. Hang it with pride!",
+        "The beach is cleaner. The King is smug. Perfect."
+      ],
+      "kingFailure": [
+        "Still beach-ball sized. The King expected a town-ball.",
+        "Umbrellas remain upright. That is a personal insult.",
+        "Too small to cast shade. Try again, damp Prince."
+      ]
+    },
+    {
+      "id": "crab-hunt-3",
+      "name": "Crab Hunt",
+      "blurb": "A special request: scoop crabs. Size is optional. Crabs are not.",
+      "mode": "collect",
+      "collectType": "crab",
+      "collectGoal": 12,
+      "timeLimit": 240,
+      "goalCm": 0,
+      "startRadius": 1.3,
+      "floorSize": 95,
+      "spawnCount": 900,
+      "seed": 3141,
+      "theme": "coral-reef",
+      "starName": "Crab Constellation",
+      "kingIntro": "Forget size. Fetch crabs. Exactly the royal number. Do not ask why.",
+      "kingPraise": [
+        "Crabs! A scurrying constellation! The King is inexplicably delighted.",
+        "Yes! Crab after crab after crab. Astronomy has never been so sideways.",
+        "A sticky bouquet of claws. Hang it carefully — they pinch."
+      ],
+      "kingFailure": [
+        "Insufficient crabs. The Cosmos cannot accept excuses.",
+        "You rolled past them. They noticed. The King noticed.",
+        "Crab count: disappointing. Ambition: also crabs."
+      ]
+    },
+    {
       "id": "harbor-3",
       "name": "Harbor",
       "blurb": "Roll the docks. Leave no buoy un-scooped.",
+      "mode": "size",
       "timeLimit": 360,
       "goalCm": 160,
       "startRadius": 0.7,
@@ -70,6 +125,31 @@
         "The harbor remains offensively three-dimensional.",
         "No beacon today. Merely a floating disappointment.",
         "The King expected grandeur. The Prince delivered a beach toy."
+      ]
+    },
+    {
+      "id": "boardwalk-5",
+      "name": "Boardwalk",
+      "blurb": "Carnival clutter and pier junk. Roll until the lights look tiny.",
+      "mode": "size",
+      "timeLimit": 380,
+      "goalCm": 200,
+      "startRadius": 0.85,
+      "floorSize": 130,
+      "spawnCount": 1700,
+      "seed": 2026,
+      "theme": "boardwalk",
+      "starName": "Pier Prism",
+      "kingIntro": "The boardwalk glitters with mortal frivolity. Absorb the frivolity.",
+      "kingPraise": [
+        "A carnival moon! Sticky, loud, and slightly sticky with cotton candy.",
+        "The pier has been promoted to orbit. The King applauds slowly.",
+        "Grand! A prism of junk-food destiny. Hang it high!"
+      ],
+      "kingFailure": [
+        "Still carnival-snack sized. Grow into the rides.",
+        "The boardwalk laughs at your circumference.",
+        "Not prismatic enough. Roll harder, Prince of Midway."
       ]
     }
   ]

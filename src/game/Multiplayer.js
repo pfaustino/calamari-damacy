@@ -261,6 +261,12 @@ export class Multiplayer {
         this._inputAcc = 0;
         this.net.send({ type: 'input', wish: localWish });
       }
+      // Predict local ball so movement + roll feel immediate
+      if (local?.ball) local.ball.update(dt, localWish);
+      for (const p of this.players) {
+        if (!p.ball || p.id === this.localId) continue;
+        p.ball.smoothToNet(dt);
+      }
       return;
     }
 
@@ -302,7 +308,7 @@ export class Multiplayer {
     }
 
     this._stateAcc += dt;
-    if (this._stateAcc >= 1 / 15) {
+    if (this._stateAcc >= 1 / 20) {
       this._stateAcc = 0;
       this._broadcastState();
     }
@@ -412,7 +418,8 @@ export class Multiplayer {
     for (const snap of msg.players || []) {
       const p = this.players.find((pl) => pl.id === snap.id);
       if (!p?.ball) continue;
-      p.ball.applyNetState(snap);
+      if (snap.id === this.localId) p.ball.reconcileNet(snap);
+      else p.ball.setNetTarget(snap);
     }
   }
 

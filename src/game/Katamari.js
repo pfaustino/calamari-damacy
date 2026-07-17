@@ -80,6 +80,7 @@ export class Katamari {
     this._axis = new THREE.Vector3();
     this._quat = new THREE.Quaternion();
     this._bumpY = 0;
+    this._net = null;
   }
 
   get diameterCm() {
@@ -175,8 +176,10 @@ export class Katamari {
     this.group.position.y = this.position.y;
   }
 
-  /** Guest: snap to host authority. */
+  /** Guest: hard snap (large correction) with roll from displacement. */
   applyNetState(snap) {
+    const prevX = this.position.x;
+    const prevZ = this.position.z;
     this.position.x = snap.x;
     this.position.z = snap.z;
     this.position.y = snap.y ?? snap.radius;
@@ -186,7 +189,77 @@ export class Katamari {
     this.volume = snap.volume ?? volumeFromRadius(snap.radius);
     this.count = snap.count ?? this.count;
     this._syncScale();
+    this._rollByDelta(this.position.x - prevX, this.position.z - prevZ);
     this.group.position.copy(this.position);
+  }
+
+  /** Remote balls: store host snapshot to chase smoothly. */
+  setNetTarget(snap) {
+    this._net = {
+      x: snap.x,
+      z: snap.z,
+      y: snap.y ?? snap.radius,
+      vx: snap.vx,
+      vz: snap.vz,
+      radius: snap.radius,
+      volume: snap.volume ?? volumeFromRadius(snap.radius),
+      count: snap.count ?? this.count,
+      age: 0,
+    };
+    this.radius = this._net.radius;
+    this.volume = this._net.volume;
+    this.count = this._net.count;
+    this._syncScale();
+  }
+
+  /** Soft-correct predicted local ball toward host without killing roll feel. */
+  reconcileNet(snap) {
+    this.radius = snap.radius;
+    this.volume = snap.volume ?? volumeFromRadius(snap.radius);
+    this.count = snap.count ?? this.count;
+    this._syncScale();
+
+    const err = Math.hypot(snap.x - this.position.x, snap.z - this.position.z);
+    if (err > 3.5) {
+      this.applyNetState(snap);
+      return;
+    }
+    // Gentle pull — keep predicted motion / quaternion
+    const blend = Math.min(0.35, 0.12 + err * 0.08);
+    this.position.x += (snap.x - this.position.x) * blend;
+    this.position.z += (snap.z - this.position.z) * blend;
+    this.velocity.x += (snap.vx - this.velocity.x) * blend;
+    this.velocity.z += (snap.vz - this.velocity.z) * blend;
+    this.position.y = this.radius + this._bumpY;
+    this.group.position.copy(this.position);
+  }
+
+  /** Extrapolate + lerp remotes; roll from actual movement. */
+  smoothToNet(dt) {
+    if (!this._net) return;
+    this._net.age += dt;
+    const look = Math.min(0.12, this._net.age);
+    const tx = this._net.x + this._net.vx * look;
+    const tz = this._net.z + this._net.vz * look;
+    const prevX = this.position.x;
+    const prevZ = this.position.z;
+    const alpha = 1 - Math.exp(-14 * dt);
+    this.position.x += (tx - this.position.x) * alpha;
+    this.position.z += (tz - this.position.z) * alpha;
+    this.velocity.x = this._net.vx;
+    this.velocity.z = this._net.vz;
+    this.position.y = this._net.y;
+    this._rollByDelta(this.position.x - prevX, this.position.z - prevZ);
+    this.group.position.copy(this.position);
+  }
+
+  _rollByDelta(dx, dz) {
+    const dist = Math.hypot(dx, dz);
+    if (dist < 1e-5 || this.radius < 1e-4) return;
+    this._axis.set(-dz, 0, dx).normalize();
+    const angle = -dist / this.radius;
+    this._quat.setFromAxisAngle(this._axis, angle);
+    this.group.quaternion.premultiply(this._quat);
   }
 
   /** Sink stuck meshes into the core; convert their volume into the ball. */

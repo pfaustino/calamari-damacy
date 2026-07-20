@@ -357,6 +357,10 @@ export class Game {
           stageName: this.stage?.name,
           mode: this.stage?.mode ?? 'size',
           multiplayer: true,
+          timeSec: Math.max(
+            0,
+            (this.stage?.timeLimit ?? 0) - Math.max(0, this.timeLeft),
+          ),
         });
       }
     }
@@ -429,6 +433,8 @@ export class Game {
       timeLeft: this.timeLeft,
     };
     this.state = 'result';
+    const timeLimit = this.stage.timeLimit ?? 0;
+    const timeSec = Math.max(0, timeLimit - Math.max(0, this.timeLeft));
     const runPayload = {
       sizeCm: this._lastResult.sizeCm,
       count: this._lastResult.count,
@@ -437,6 +443,7 @@ export class Game {
       stageName: this.stage.name,
       mode: this.stage.mode ?? 'size',
       multiplayer: false,
+      timeSec,
     };
     this.ui.showResult({
       won,

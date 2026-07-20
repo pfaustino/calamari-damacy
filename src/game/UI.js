@@ -4,6 +4,7 @@
 import {
   canFetchGlobalLeaderboard,
   fetchGlobalLeaderboard,
+  formatLeaderboardTime,
   isGlobalLeaderboardConfigured,
 } from '../lib/globalLeaderboard.js';
 import { setLeaderboardName } from './Progress.js';
@@ -188,6 +189,7 @@ export class UI {
               <th>Rank</th>
               <th>Player</th>
               <th>Size</th>
+              <th>Time</th>
               <th>Stage</th>
               <th>Objects</th>
             </tr>
@@ -198,6 +200,7 @@ export class UI {
                 <td>${i + 1}</td>
                 <td>${escapeHtml(row.player)}</td>
                 <td><strong>${row.value} cm</strong></td>
+                <td>${formatLeaderboardTime(row.meta?.time)}</td>
                 <td>${escapeHtml(row.meta?.stage ?? '—')}</td>
                 <td>${row.meta?.objects ?? '—'}</td>
               </tr>

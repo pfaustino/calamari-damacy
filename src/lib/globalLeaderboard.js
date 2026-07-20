@@ -80,6 +80,7 @@ export async function submitGlobalScore(payload) {
  *   mode?: string,
  *   collectCount?: number,
  *   multiplayer?: boolean,
+ *   timeSec?: number,
  * }} run
  * @returns {{ ok: true, player: string } | { ok: false, reason: 'not_configured' | 'no_name' | 'bad_score' }}
  */
@@ -93,6 +94,7 @@ export function trySubmitGlobalClear(progress, run) {
   if (!Number.isFinite(sizeCm) || sizeCm <= 0) {
     return { ok: false, reason: 'bad_score' };
   }
+  const timeSec = Number(run.timeSec);
   submitGlobalScore({
     player,
     value: sizeCm,
@@ -103,7 +105,17 @@ export function trySubmitGlobalClear(progress, run) {
       mode: run.mode ?? 'size',
       collectCount: run.collectCount ?? 0,
       multiplayer: Boolean(run.multiplayer),
+      time: Number.isFinite(timeSec) && timeSec >= 0 ? Math.round(timeSec) : null,
     },
   });
   return { ok: true, player };
+}
+
+/** Format elapsed seconds as m:ss for leaderboard cells. */
+export function formatLeaderboardTime(seconds) {
+  if (seconds == null || !Number.isFinite(Number(seconds))) return '—';
+  const s = Math.max(0, Math.round(Number(seconds)));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
 }

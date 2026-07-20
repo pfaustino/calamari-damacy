@@ -41,9 +41,24 @@ export class Collectibles {
     this.items = [];
     /** @type {Map<number, { id: number, mesh: THREE.Mesh, type: object, vx: number, vz: number }>} */
     this.byId = new Map();
+    /** @type {Map<string, THREE.MeshStandardMaterial>} shared per type — dense stages reuse mats */
+    this._mats = new Map();
     this._nextId = 1;
     this.root = new THREE.Group();
     game.scene.add(this.root);
+  }
+
+  _materialFor(type) {
+    let mat = this._mats.get(type.id);
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(type.color),
+        roughness: 0.65,
+        metalness: 0.08,
+      });
+      this._mats.set(type.id, mat);
+    }
+    return mat;
   }
 
   spawn() {
@@ -67,12 +82,7 @@ export class Collectibles {
         if (Math.hypot(x, z) < 2.5) continue;
 
         const geo = makeGeometry(type.shape, type.size);
-        const mat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(type.color),
-          roughness: 0.65,
-          metalness: 0.08,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
+        const mesh = new THREE.Mesh(geo, this._materialFor(type));
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.position.set(x, type.size * 0.35, z);
@@ -100,11 +110,12 @@ export class Collectibles {
   clear() {
     for (const { mesh } of this.items) {
       mesh.geometry?.dispose();
-      mesh.material?.dispose();
       mesh.removeFromParent();
     }
     this.items.length = 0;
     this.byId.clear();
+    for (const mat of this._mats.values()) mat.dispose();
+    this._mats.clear();
     this._nextId = 1;
   }
 
@@ -129,7 +140,7 @@ export class Collectibles {
     if (idx >= 0) this.items.splice(idx, 1);
     if (disposeIfUnused) {
       item.mesh.geometry?.dispose();
-      item.mesh.material?.dispose();
+      // Materials are shared per type — do not dispose here.
       item.mesh.removeFromParent();
       return null;
     }
@@ -141,12 +152,7 @@ export class Collectibles {
     const type = this.game.objectTypes.find((t) => t.id === typeId);
     if (!type) return null;
     const geo = makeGeometry(type.shape, type.size);
-    const mat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(type.color),
-      roughness: 0.65,
-      metalness: 0.08,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(geo, this._materialFor(type));
     mesh.userData.typeId = type.id;
     mesh.userData.size = type.size;
     mesh.userData.propId = -1;

@@ -14,11 +14,13 @@ import {
   recordClear,
   isStageUnlocked,
   clearProgress,
+  setLeaderboardName,
 } from './Progress.js';
 import { Multiplayer } from './Multiplayer.js';
 import { initDevPanel } from '../dev/DevPanel.js';
+import { trySubmitGlobalClear } from '../lib/globalLeaderboard.js';
 
-/** @typedef {'title' | 'playing' | 'paused' | 'mp-paused' | 'result' | 'present' | 'cosmos' | 'lobby' | 'mp-playing' | 'mp-result'} GameState */
+/** @typedef {'title' | 'playing' | 'paused' | 'mp-paused' | 'result' | 'present' | 'cosmos' | 'leaderboard' | 'lobby' | 'mp-playing' | 'mp-result'} GameState */
 
 /**
  * Thin orchestrator — wires systems and owns the state machine.
@@ -146,6 +148,13 @@ export class Game {
     document.getElementById('btn-title-cosmos').addEventListener('click', () => {
       this.audio.unlockAndPlay();
       this.showCosmos();
+    });
+    document.getElementById('btn-leaderboard').addEventListener('click', () => {
+      this.audio.unlockAndPlay();
+      this.showLeaderboard();
+    });
+    document.getElementById('btn-leaderboard-close').addEventListener('click', () => {
+      this.toTitle();
     });
     document.getElementById('btn-mp').addEventListener('click', () => {
       this.audio.unlockAndPlay();
@@ -338,6 +347,19 @@ export class Game {
       rankings: msg.rankings,
       stageName: this.stage?.name,
     });
+    if (youWon) {
+      const you = (msg.rankings || []).find((r) => r.you) ?? (msg.rankings || [])[0];
+      if (you) {
+        trySubmitGlobalClear(this.progress, {
+          sizeCm: you.sizeCm,
+          count: you.count,
+          stageId: this.stage?.id,
+          stageName: this.stage?.name,
+          mode: this.stage?.mode ?? 'size',
+          multiplayer: true,
+        });
+      }
+    }
     this.audio.duck(0.4);
   }
 
@@ -364,6 +386,16 @@ export class Game {
     );
     this.audio.duck(0.45);
     this.audio.play();
+  }
+
+  showLeaderboard() {
+    this.state = 'leaderboard';
+    this.clearBalls();
+    this.collectibles?.clear();
+    this.ui.showLeaderboard(this.progress, (next) => {
+      this.progress = next;
+    });
+    this.audio.duck(0.45);
   }
 
   pause() {
@@ -397,6 +429,15 @@ export class Game {
       timeLeft: this.timeLeft,
     };
     this.state = 'result';
+    const runPayload = {
+      sizeCm: this._lastResult.sizeCm,
+      count: this._lastResult.count,
+      collectCount: this._lastResult.collectCount,
+      stageId: this.stage.id,
+      stageName: this.stage.name,
+      mode: this.stage.mode ?? 'size',
+      multiplayer: false,
+    };
     this.ui.showResult({
       won,
       sizeCm,
@@ -409,6 +450,13 @@ export class Game {
       timeLeft: this.timeLeft,
       stageName: this.stage.name,
       kingLine: this.pickKingLine(won ? 'kingPraise' : 'kingFailure'),
+      progress: this.progress,
+      onSaveAndSubmit: (name) => {
+        const next = setLeaderboardName(this.progress, name);
+        if (!next) return { ok: false, error: 'Enter a name (max 24 chars).' };
+        this.progress = next;
+        return trySubmitGlobalClear(this.progress, runPayload);
+      },
     });
     this.audio.duck(0.4);
   }

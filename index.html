@@ -39,9 +39,35 @@
         <div class="cta-row">
           <button type="button" id="btn-play" class="btn primary">Start Rolling</button>
           <button type="button" id="btn-title-cosmos" class="btn">The Cosmos</button>
+          <button type="button" id="btn-leaderboard" class="btn">Leaderboard</button>
           <button type="button" id="btn-mp" class="btn">Multiplayer</button>
         </div>
         <p class="controls-blurb">WASD or arrow keys · collect anything smaller than you</p>
+      </div>
+    </div>
+
+    <div id="leaderboard-screen" class="overlay hidden">
+      <div class="overlay-panel leaderboard-panel">
+        <h2 class="leaderboard-heading">Leaderboard</h2>
+        <div class="leaderboard-tabs">
+          <button type="button" class="btn leaderboard-tab is-active" data-tab="local" id="btn-lb-local">Local</button>
+          <button type="button" class="btn leaderboard-tab" data-tab="global" id="btn-lb-global">Global</button>
+        </div>
+        <div class="leaderboard-name-row">
+          <label class="leaderboard-name-label" for="leaderboard-name">Global name</label>
+          <input id="leaderboard-name" class="leaderboard-name-input" maxlength="24" placeholder="Name for global board" autocomplete="off" />
+          <button type="button" class="btn" id="btn-save-lb-name">Save</button>
+        </div>
+        <p id="leaderboard-status" class="leaderboard-status" aria-live="polite"></p>
+        <div id="leaderboard-panel-local"></div>
+        <div id="leaderboard-panel-global" class="hidden">
+          <p class="leaderboard-sub">Biggest clears worldwide (size in cm)</p>
+          <p class="leaderboard-loading" id="global-loading">Loading…</p>
+          <div id="global-rows"></div>
+        </div>
+        <div class="cta-row">
+          <button type="button" id="btn-leaderboard-close" class="btn">Back</button>
+        </div>
       </div>
     </div>
 
@@ -135,6 +161,12 @@
         <h2 id="result-title">Fantastic!</h2>
         <p id="result-message" class="tagline"></p>
         <p id="result-stats" class="result-stats"></p>
+        <div id="result-score-row" class="leaderboard-name-row">
+          <label class="leaderboard-name-label" for="result-name">Your name</label>
+          <input id="result-name" class="leaderboard-name-input" maxlength="24" placeholder="Save to leaderboard" autocomplete="off" />
+          <button type="button" class="btn" id="btn-result-save-score">Save score</button>
+        </div>
+        <p id="result-score-status" class="leaderboard-status" aria-live="polite"></p>
         <div class="cta-row">
           <button type="button" id="btn-result-primary" class="btn primary">Present to the King</button>
           <button type="button" id="btn-title" class="btn">Title</button>

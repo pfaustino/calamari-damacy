@@ -1,6 +1,21 @@
 /**
  * HUD / overlay helpers for title → play → result → present → cosmos → multiplayer.
  */
+import {
+  canFetchGlobalLeaderboard,
+  fetchGlobalLeaderboard,
+  isGlobalLeaderboardConfigured,
+} from '../lib/globalLeaderboard.js';
+import { setLeaderboardName } from './Progress.js';
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export class UI {
   constructor() {
     this.hud = document.getElementById('hud');
@@ -27,8 +42,10 @@ export class UI {
     this.stageList = document.getElementById('stage-list');
     this.mpScreen = document.getElementById('mp-screen');
     this.mpResult = document.getElementById('mp-result-screen');
+    this.leaderboard = document.getElementById('leaderboard-screen');
     this.pausePanel = 'main';
     this._eventTimer = 0;
+    this._lbTab = 'local';
   }
 
   hideAllOverlays() {
@@ -39,12 +56,156 @@ export class UI {
     this.cosmos.classList.add('hidden');
     this.mpScreen?.classList.add('hidden');
     this.mpResult?.classList.add('hidden');
+    this.leaderboard?.classList.add('hidden');
     this.hud.classList.add('hidden');
   }
 
   showTitle() {
     this.hideAllOverlays();
     this.title.classList.remove('hidden');
+  }
+
+  /**
+   * Local stars + global API board. Mutates progress via setLeaderboardName.
+   * @param {{ completed: string[], stars: object[], leaderboardName: string }} progress
+   * @param {(next: object) => void} onProgress
+   */
+  showLeaderboard(progress, onProgress) {
+    this.hideAllOverlays();
+    this.leaderboard.classList.remove('hidden');
+    this._lbTab = 'local';
+
+    const nameInput = document.getElementById('leaderboard-name');
+    const status = document.getElementById('leaderboard-status');
+    const panelLocal = document.getElementById('leaderboard-panel-local');
+    const tabLocal = document.getElementById('btn-lb-local');
+    const tabGlobal = document.getElementById('btn-lb-global');
+    const canFetch = canFetchGlobalLeaderboard();
+    const canSubmit = isGlobalLeaderboardConfigured();
+
+    nameInput.value = progress.leaderboardName ?? '';
+    status.textContent = canSubmit
+      ? ''
+      : 'Name saves locally. Global submits need VITE_LEADERBOARD_WRITE_KEY in this build.';
+    panelLocal.innerHTML = this._buildLocalLeaderboard(progress);
+    tabGlobal.disabled = !canFetch;
+    tabGlobal.title = canFetch ? '' : 'Global board unavailable';
+    this._showLeaderboardTab('local');
+
+    tabLocal.onclick = () => this._showLeaderboardTab('local');
+    tabGlobal.onclick = () => {
+      if (!canFetch) return;
+      this._showLeaderboardTab('global');
+      this._loadGlobalLeaderboard();
+    };
+    document.getElementById('btn-save-lb-name').onclick = () => {
+      const next = setLeaderboardName(progress, nameInput.value);
+      if (!next) {
+        status.textContent = 'Enter a name (max 24 chars).';
+        return;
+      }
+      onProgress(next);
+      status.textContent = canSubmit
+        ? 'Global name saved.'
+        : 'Name saved locally. Global submits need VITE_LEADERBOARD_WRITE_KEY in this build.';
+    };
+  }
+
+  _showLeaderboardTab(tab) {
+    this._lbTab = tab;
+    const isLocal = tab === 'local';
+    document.getElementById('btn-lb-local').classList.toggle('is-active', isLocal);
+    document.getElementById('btn-lb-global').classList.toggle('is-active', !isLocal);
+    document.getElementById('leaderboard-panel-local').classList.toggle('hidden', !isLocal);
+    document.getElementById('leaderboard-panel-global').classList.toggle('hidden', isLocal);
+  }
+
+  _buildLocalLeaderboard(progress) {
+    const stars = [...(progress.stars ?? [])].sort((a, b) => (b.sizeCm ?? 0) - (a.sizeCm ?? 0));
+    const best = stars[0]?.sizeCm ?? 0;
+    const clears = progress.completed?.length ?? 0;
+    let rows = '<p class="leaderboard-empty">No clears yet — hang a star to set your first record!</p>';
+    if (stars.length) {
+      rows = `
+        <div class="leaderboard-table-wrap">
+          <table class="leaderboard-table" aria-label="Local clears">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Star</th>
+                <th>Size</th>
+                <th>Objects</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${stars.map((star, i) => `
+                <tr class="leaderboard-row${star.sizeCm === best ? ' leaderboard-row-best' : ''}">
+                  <td>${i + 1}</td>
+                  <td>${escapeHtml(star.starName ?? star.stageId ?? '—')}</td>
+                  <td><strong>${star.sizeCm ?? 0} cm</strong>${star.sizeCm === best ? ' <span class="leaderboard-pr">PR</span>' : ''}</td>
+                  <td>${star.count ?? '—'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+    return `
+      <p class="leaderboard-sub">Best clears on this device · ${clears} mission${clears === 1 ? '' : 's'}</p>
+      <div class="leaderboard-bests">
+        <div class="leaderboard-stat"><span>Best size</span><strong>${best > 0 ? `${best} cm` : '—'}</strong></div>
+        <div class="leaderboard-stat"><span>Stars hung</span><strong>${stars.length}</strong></div>
+      </div>
+      <h3 class="leaderboard-section-title">Clears by size</h3>
+      ${rows}
+    `;
+  }
+
+  async _loadGlobalLeaderboard() {
+    const loading = document.getElementById('global-loading');
+    const rowsEl = document.getElementById('global-rows');
+    loading.classList.remove('hidden');
+    rowsEl.innerHTML = '';
+    const result = await fetchGlobalLeaderboard(50);
+    loading.classList.add('hidden');
+    if (!result.ok) {
+      rowsEl.innerHTML = `<p class="leaderboard-empty">${escapeHtml(result.error)}</p>`;
+      return;
+    }
+    rowsEl.innerHTML = this._buildGlobalLeaderboardRows(result.rows);
+  }
+
+  _buildGlobalLeaderboardRows(rows) {
+    if (!rows.length) {
+      return '<p class="leaderboard-empty">No global scores yet — be the first!</p>';
+    }
+    return `
+      <div class="leaderboard-table-wrap">
+        <table class="leaderboard-table" aria-label="Global top clears">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Player</th>
+              <th>Size</th>
+              <th>Stage</th>
+              <th>Objects</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, i) => `
+              <tr class="leaderboard-row${i === 0 ? ' leaderboard-row-best' : ''}">
+                <td>${i + 1}</td>
+                <td>${escapeHtml(row.player)}</td>
+                <td><strong>${row.value} cm</strong></td>
+                <td>${escapeHtml(row.meta?.stage ?? '—')}</td>
+                <td>${row.meta?.objects ?? '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   showMpMenu() {
@@ -221,6 +382,8 @@ export class UI {
     timeLeft,
     stageName,
     kingLine,
+    progress = { leaderboardName: '' },
+    onSaveAndSubmit = null,
   }) {
     this.hideAllOverlays();
     this.result.classList.remove('hidden');
@@ -245,6 +408,62 @@ export class UI {
       mode === 'collect'
         ? `${collectCount}/${collectGoal} ${collectType}s · ${sizeCm} cm · ${count} objects`
         : `${sizeCm} cm · ${count} objects · goal ${goalCm} cm`;
+
+    this._bindResultScoreSave(progress, onSaveAndSubmit);
+  }
+
+  /**
+   * Prompt for a global name on every stage end and submit size when ready.
+   * @param {{ leaderboardName?: string }} progress
+   * @param {(name: string) => { ok: boolean, player?: string, reason?: string, error?: string } | null} onSaveAndSubmit
+   */
+  _bindResultScoreSave(progress, onSaveAndSubmit) {
+    const nameInput = /** @type {HTMLInputElement | null} */ (document.getElementById('result-name'));
+    const status = document.getElementById('result-score-status');
+    const saveBtn = document.getElementById('btn-result-save-score');
+    if (!nameInput || !status || !saveBtn || !onSaveAndSubmit) return;
+
+    nameInput.value = progress.leaderboardName ?? '';
+
+    const applyStatus = (result) => {
+      if (!result) {
+        status.textContent = 'Enter a name to save your score.';
+        return;
+      }
+      if (result.error) {
+        status.textContent = result.error;
+        return;
+      }
+      if (result.ok) {
+        status.textContent = `Score submitted as ${result.player}.`;
+        return;
+      }
+      if (result.reason === 'not_configured') {
+        status.textContent = 'Name saved. Global board unavailable in this build.';
+        return;
+      }
+      if (result.reason === 'no_name') {
+        status.textContent = 'Enter a name to save your score.';
+        return;
+      }
+      status.textContent = 'Could not save score.';
+    };
+
+    const save = () => applyStatus(onSaveAndSubmit(nameInput.value));
+    saveBtn.onclick = save;
+    nameInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        save();
+      }
+    };
+
+    if (progress.leaderboardName?.trim()) {
+      applyStatus(onSaveAndSubmit(progress.leaderboardName));
+    } else {
+      status.textContent = 'Enter a name to save your score.';
+      nameInput.focus();
+    }
   }
 
   showPresent({ starName, kingPraise, sizeCm, count }) {

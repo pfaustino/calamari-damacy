@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
 /**
- * Third-person camera that eases behind the ball along travel direction.
- * Input is camera-relative; yaw only follows forward travel (not strafe/reverse).
- * Mouse wheel zooms in/out.
+ * Chase camera: always sits on an orbit around the ball, behind travel facing.
+ * Facing comes from velocity (wish while nearly stopped) — not mesh roll.
+ * Input is camera-relative via wishToWorld; mouse wheel zooms.
  */
 export class FollowCamera {
   /** @param {import('./Game.js').Game} game */
@@ -37,39 +37,43 @@ export class FollowCamera {
   /**
    * @param {number} dt
    * @param {import('./Katamari.js').Katamari} ball
-   * @param {{ x: number, z: number }} _wish
+   * @param {{ x: number, z: number }} wish world-space wish (from wishToWorld)
    */
-  update(dt, ball, _wish) {
+  update(dt, ball, wish) {
     const cam = this.game.camera;
     const { cameraDistance, cameraHeight, cameraLerp } = this.game.tuning;
 
+    // Facing = horizontal travel direction; wish while nearly stopped so turn starts early.
+    let faceX = 0;
+    let faceZ = 0;
     const spd = Math.hypot(ball.velocity.x, ball.velocity.z);
-    if (spd > 0.5) {
-      const fx = Math.sin(this.yaw);
-      const fz = Math.cos(this.yaw);
-      // Only orbit behind when moving forward-ish — avoids A-spin and S-flip
-      const forwardDot = (ball.velocity.x * fx + ball.velocity.z * fz) / spd;
-      if (forwardDot > 0.2) {
-        const targetYaw = Math.atan2(ball.velocity.x, ball.velocity.z);
-        let diff = targetYaw - this.yaw;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        const turn = 1 - Math.exp(-cameraLerp * dt);
-        this.yaw += diff * turn;
-      }
+    if (spd > 0.2) {
+      faceX = ball.velocity.x / spd;
+      faceZ = ball.velocity.z / spd;
+    } else if (wish && (wish.x !== 0 || wish.z !== 0)) {
+      faceX = wish.x;
+      faceZ = wish.z;
+    }
+
+    if (faceX !== 0 || faceZ !== 0) {
+      const targetYaw = Math.atan2(faceX, faceZ);
+      let diff = targetYaw - this.yaw;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      const turn = 1 - Math.exp(-cameraLerp * dt);
+      this.yaw += diff * turn;
     }
 
     const dist = (cameraDistance + ball.radius * 2.2) * this.zoom;
     const height = (cameraHeight + ball.radius * 1.4) * this.zoom;
 
+    // Always on the orbit ring around the ball (behind facing).
     this._desired.set(
       ball.position.x - Math.sin(this.yaw) * dist,
       ball.position.y + height,
       ball.position.z - Math.cos(this.yaw) * dist,
     );
-
-    const t = 1 - Math.exp(-cameraLerp * dt);
-    cam.position.lerp(this._desired, t);
+    cam.position.copy(this._desired);
     this._look.set(ball.position.x, ball.position.y + ball.radius * 0.3, ball.position.z);
     cam.lookAt(this._look);
   }

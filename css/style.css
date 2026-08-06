@@ -766,6 +766,22 @@ body {
   background: rgba(8, 48, 68, 0.98);
 }
 
+.leaderboard-table th.lb-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.leaderboard-table th.lb-sort:hover,
+.leaderboard-table th.lb-sort:focus-visible {
+  color: var(--cream);
+  outline: none;
+}
+
+.leaderboard-table th.lb-sort.is-active {
+  color: var(--sea-foam);
+}
+
 .leaderboard-row-best {
   background: rgba(255, 209, 102, 0.08);
 }

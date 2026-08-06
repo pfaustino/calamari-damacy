@@ -48,6 +48,15 @@ export class UI {
     this.pausePanel = 'main';
     this._eventTimer = 0;
     this._lbTab = 'local';
+    /** @type {object[]} */
+    this._lbLocalStars = [];
+    this._lbLocalClears = 0;
+    /** @type {object[]} */
+    this._lbGlobalRows = [];
+    this._lbSort = {
+      local: { key: 'sizeCm', dir: 'desc' },
+      global: { key: 'value', dir: 'desc' },
+    };
   }
 
   hideAllOverlays() {
@@ -89,6 +98,7 @@ export class UI {
     this.hideAllOverlays();
     this.leaderboard.classList.remove('hidden');
     this._lbTab = 'local';
+    this._lbSort.local = { key: 'sizeCm', dir: 'desc' };
 
     const nameInput = document.getElementById('leaderboard-name');
     const status = document.getElementById('leaderboard-status');
@@ -103,6 +113,7 @@ export class UI {
       ? ''
       : 'Name saves locally. Global submits need VITE_LEADERBOARD_WRITE_KEY in this build.';
     panelLocal.innerHTML = this._buildLocalLeaderboard(progress);
+    this._wireLeaderboardSort('local');
     tabGlobal.disabled = !canFetch;
     tabGlobal.title = canFetch ? '' : 'Global board unavailable';
     this._showLeaderboardTab('local');
@@ -136,24 +147,26 @@ export class UI {
   }
 
   _buildLocalLeaderboard(progress) {
-    const stars = [...(progress.stars ?? [])].sort((a, b) => (b.sizeCm ?? 0) - (a.sizeCm ?? 0));
-    const best = stars[0]?.sizeCm ?? 0;
-    const clears = progress.completed?.length ?? 0;
+    this._lbLocalStars = [...(progress.stars ?? [])];
+    this._lbLocalClears = progress.completed?.length ?? 0;
+    const best = this._lbLocalStars.reduce((m, s) => Math.max(m, s.sizeCm ?? 0), 0);
+    const clears = this._lbLocalClears;
+    const sorted = this._sortedLeaderboardRows('local');
     let rows = '<p class="leaderboard-empty">No clears yet — hang a star to set your first record!</p>';
-    if (stars.length) {
+    if (sorted.length) {
       rows = `
         <div class="leaderboard-table-wrap">
-          <table class="leaderboard-table" aria-label="Local clears">
+          <table class="leaderboard-table" aria-label="Local clears" data-lb-board="local">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Star</th>
-                <th>Size</th>
-                <th>Objects</th>
+                ${this._sortHeaderHtml('local', 'rank', '#')}
+                ${this._sortHeaderHtml('local', 'star', 'Star')}
+                ${this._sortHeaderHtml('local', 'sizeCm', 'Size')}
+                ${this._sortHeaderHtml('local', 'count', 'Objects')}
               </tr>
             </thead>
             <tbody>
-              ${stars.map((star, i) => `
+              ${sorted.map((star, i) => `
                 <tr class="leaderboard-row${star.sizeCm === best ? ' leaderboard-row-best' : ''}">
                   <td>${i + 1}</td>
                   <td>${escapeHtml(star.starName ?? star.stageId ?? '—')}</td>
@@ -170,9 +183,9 @@ export class UI {
       <p class="leaderboard-sub">Best clears on this device · ${clears} mission${clears === 1 ? '' : 's'}</p>
       <div class="leaderboard-bests">
         <div class="leaderboard-stat"><span>Best size</span><strong>${best > 0 ? `${best} cm` : '—'}</strong></div>
-        <div class="leaderboard-stat"><span>Stars hung</span><strong>${stars.length}</strong></div>
+        <div class="leaderboard-stat"><span>Stars hung</span><strong>${this._lbLocalStars.length}</strong></div>
       </div>
-      <h3 class="leaderboard-section-title">Clears by size</h3>
+      <h3 class="leaderboard-section-title">Clears</h3>
       ${rows}
     `;
   }
@@ -186,31 +199,37 @@ export class UI {
     loading.classList.add('hidden');
     if (!result.ok) {
       rowsEl.innerHTML = `<p class="leaderboard-empty">${escapeHtml(result.error)}</p>`;
+      this._lbGlobalRows = [];
       return;
     }
-    rowsEl.innerHTML = this._buildGlobalLeaderboardRows(result.rows);
+    this._lbGlobalRows = result.rows ?? [];
+    this._lbSort.global = { key: 'value', dir: 'desc' };
+    rowsEl.innerHTML = this._buildGlobalLeaderboardRows();
+    this._wireLeaderboardSort('global');
   }
 
-  _buildGlobalLeaderboardRows(rows) {
+  _buildGlobalLeaderboardRows() {
+    const rows = this._sortedLeaderboardRows('global');
     if (!rows.length) {
       return '<p class="leaderboard-empty">No global scores yet — be the first!</p>';
     }
+    const bestValue = this._lbGlobalRows.reduce((m, r) => Math.max(m, Number(r.value) || 0), 0);
     return `
       <div class="leaderboard-table-wrap">
-        <table class="leaderboard-table" aria-label="Global top clears">
+        <table class="leaderboard-table" aria-label="Global top clears" data-lb-board="global">
           <thead>
             <tr>
-              <th>Rank</th>
-              <th>Player</th>
-              <th>Size</th>
-              <th>Time</th>
-              <th>Stage</th>
-              <th>Objects</th>
+              ${this._sortHeaderHtml('global', 'rank', 'Rank')}
+              ${this._sortHeaderHtml('global', 'player', 'Player')}
+              ${this._sortHeaderHtml('global', 'value', 'Size')}
+              ${this._sortHeaderHtml('global', 'time', 'Time')}
+              ${this._sortHeaderHtml('global', 'stage', 'Stage')}
+              ${this._sortHeaderHtml('global', 'objects', 'Objects')}
             </tr>
           </thead>
           <tbody>
             ${rows.map((row, i) => `
-              <tr class="leaderboard-row${i === 0 ? ' leaderboard-row-best' : ''}">
+              <tr class="leaderboard-row${row.value === bestValue ? ' leaderboard-row-best' : ''}">
                 <td>${i + 1}</td>
                 <td>${escapeHtml(row.player)}</td>
                 <td><strong>${row.value} cm</strong></td>
@@ -223,6 +242,101 @@ export class UI {
         </table>
       </div>
     `;
+  }
+
+  /** @param {'local' | 'global'} board */
+  _sortHeaderHtml(board, key, label) {
+    const sort = this._lbSort[board];
+    const active = sort.key === key;
+    const aria = active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+    const marker = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th class="lb-sort${active ? ' is-active' : ''}" data-lb-board="${board}" data-lb-sort="${key}" aria-sort="${aria}" role="columnheader" tabindex="0">${label}${marker}</th>`;
+  }
+
+  /** @param {'local' | 'global'} board */
+  _sortedLeaderboardRows(board) {
+    const { key, dir } = this._lbSort[board];
+    const mul = dir === 'asc' ? 1 : -1;
+    const rows = board === 'local' ? this._lbLocalStars : this._lbGlobalRows;
+
+    const valueOf = (row) => {
+      if (board === 'local') {
+        if (key === 'rank') return row.sizeCm ?? 0;
+        if (key === 'star') return String(row.starName ?? row.stageId ?? '');
+        if (key === 'sizeCm') return row.sizeCm ?? 0;
+        if (key === 'count') return row.count ?? -1;
+      } else {
+        if (key === 'rank') return row.value ?? 0;
+        if (key === 'player') return String(row.player ?? '');
+        if (key === 'value') return row.value ?? 0;
+        if (key === 'time') {
+          const t = Number(row.meta?.time);
+          return Number.isFinite(t) ? t : null;
+        }
+        if (key === 'stage') return String(row.meta?.stage ?? '');
+        if (key === 'objects') {
+          const n = Number(row.meta?.objects);
+          return Number.isFinite(n) ? n : -1;
+        }
+      }
+      return 0;
+    };
+
+    return [...rows].sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (typeof va === 'string' || typeof vb === 'string') {
+        return mul * String(va).localeCompare(String(vb), undefined, { sensitivity: 'base' });
+      }
+      return mul * (Number(va) - Number(vb));
+    });
+  }
+
+  /** @param {'local' | 'global'} board */
+  _wireLeaderboardSort(board) {
+    const root = board === 'local'
+      ? document.getElementById('leaderboard-panel-local')
+      : document.getElementById('global-rows');
+    if (!root) return;
+    const headers = root.querySelectorAll('th.lb-sort');
+    for (const th of headers) {
+      const activate = () => {
+        const key = th.getAttribute('data-lb-sort');
+        if (!key) return;
+        const sort = this._lbSort[board];
+        if (sort.key === key) {
+          sort.dir = sort.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sort.key = key;
+          // Text / names ascend first; numeric KPIs descend
+          sort.dir = key === 'star' || key === 'player' || key === 'stage' || key === 'time'
+            ? 'asc'
+            : 'desc';
+        }
+        if (board === 'local') {
+          const panel = document.getElementById('leaderboard-panel-local');
+          panel.innerHTML = this._buildLocalLeaderboard({
+            stars: this._lbLocalStars,
+            completed: Array.from({ length: this._lbLocalClears }),
+          });
+          this._wireLeaderboardSort('local');
+        } else {
+          const rowsEl = document.getElementById('global-rows');
+          rowsEl.innerHTML = this._buildGlobalLeaderboardRows();
+          this._wireLeaderboardSort('global');
+        }
+      };
+      th.onclick = activate;
+      th.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
+      };
+    }
   }
 
   showMpMenu() {

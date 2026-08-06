@@ -19,8 +19,12 @@ import {
 import { Multiplayer } from './Multiplayer.js';
 import { initDevPanel } from '../dev/DevPanel.js';
 import { trySubmitGlobalClear } from '../lib/globalLeaderboard.js';
+import { demoWish } from './DemoPilot.js';
 
-/** @typedef {'title' | 'playing' | 'paused' | 'mp-paused' | 'result' | 'present' | 'cosmos' | 'leaderboard' | 'lobby' | 'mp-playing' | 'mp-result'} GameState */
+/** @typedef {'title' | 'playing' | 'paused' | 'mp-paused' | 'result' | 'present' | 'cosmos' | 'leaderboard' | 'lobby' | 'mp-playing' | 'mp-result' | 'demo'} GameState */
+
+/** Demo showcase length before returning to title. */
+const DEMO_DURATION_SEC = 50;
 
 /**
  * Thin orchestrator — wires systems and owns the state machine.
@@ -57,6 +61,7 @@ export class Game {
     this.mp = null;
     /** @type {import('./Katamari.js').Katamari[]} */
     this.mpBalls = [];
+    this._demoElapsed = 0;
   }
 
   init() {
@@ -144,6 +149,13 @@ export class Game {
         && !this.progress.completed.includes(s.id))
         ?? this.stages[0];
       this.startStage(next.id);
+    });
+    document.getElementById('btn-demo').addEventListener('click', () => {
+      this.audio.unlockAndPlay();
+      this.startDemo();
+    });
+    document.getElementById('btn-demo-skip').addEventListener('click', () => {
+      if (this.state === 'demo') this.toTitle();
     });
     document.getElementById('btn-title-cosmos').addEventListener('click', () => {
       this.audio.unlockAndPlay();
@@ -241,6 +253,29 @@ export class Game {
     this.camera.position.set(0, 8, 12);
     this.state = 'playing';
     this.ui.showPlaying(this.stage);
+    this.clock.getDelta();
+    this.audio.unduck();
+    this.audio.play();
+  }
+
+  /** Auto-roll showcase on Tide Pool — no score, Esc/Skip returns to title. */
+  startDemo() {
+    const stage = this.stages.find((s) => (s.mode ?? 'size') === 'size') ?? this.stages[0];
+    this.stage = stage;
+    this.ensureWorld();
+    this.world.buildStage(this.stage);
+
+    this.clearBalls();
+    this.collectibles.clear();
+    this.ball = new Katamari(this, this.stage.startRadius);
+    this.collectCount = 0;
+    this.collectibles.spawn();
+    this.timeLeft = DEMO_DURATION_SEC;
+    this._demoElapsed = 0;
+    this.followCam.reset();
+    this.camera.position.set(0, 8, 12);
+    this.state = 'demo';
+    this.ui.showDemo(this.stage);
     this.clock.getDelta();
     this.audio.unduck();
     this.audio.play();
@@ -509,13 +544,27 @@ export class Game {
 
     const esc = this.input.isEscapePressed();
     if (esc && !this._escWasDown) {
-      if (this.state === 'playing' || this.state === 'mp-playing') this.pause();
+      if (this.state === 'demo') this.toTitle();
+      else if (this.state === 'playing' || this.state === 'mp-playing') this.pause();
       else if (this.state === 'paused' || this.state === 'mp-paused') {
         if (this.ui.pausePanel !== 'main') this.ui.showPausePanel('main');
         else this.resume();
       }
     }
     this._escWasDown = esc;
+
+    if (this.state === 'demo' && this.ball) {
+      this._demoElapsed += dt;
+      const wish = demoWish(this.ball, this.collectibles, this.stage, this._demoElapsed);
+      this.ball.update(dt, wish);
+      this.collectibles.update(dt, this.ball);
+      this.followCam.update(dt, this.ball, wish);
+      this.timeLeft = Math.max(0, DEMO_DURATION_SEC - this._demoElapsed);
+      this.ui.updateHud(this.ball.diameterCm, this.timeLeft, {
+        mode: this.stage.mode ?? 'size',
+      });
+      if (this._demoElapsed >= DEMO_DURATION_SEC) this.toTitle();
+    }
 
     if (this.state === 'playing' && this.ball) {
       const wishLocal = this.input.getMoveVector();

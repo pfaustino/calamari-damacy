@@ -37,4 +37,14 @@ test.describe('calamari damacy smoke', () => {
     await page.locator('#btn-leaderboard-close').click();
     await expect(page.locator('#title-screen')).toBeVisible();
   });
+
+  test('demo button starts showcase and skip returns to title', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('#btn-demo').click();
+    await expect(page.locator('#hud')).toBeVisible();
+    await expect(page.locator('#demo-banner')).toBeVisible();
+    await expect(page.locator('#title-screen')).toBeHidden();
+    await page.locator('#btn-demo-skip').click();
+    await expect(page.locator('#title-screen')).toBeVisible();
+  });
 });

@@ -44,6 +44,7 @@ export class UI {
     this.mpScreen = document.getElementById('mp-screen');
     this.mpResult = document.getElementById('mp-result-screen');
     this.leaderboard = document.getElementById('leaderboard-screen');
+    this.demoBanner = document.getElementById('demo-banner');
     this.pausePanel = 'main';
     this._eventTimer = 0;
     this._lbTab = 'local';
@@ -58,12 +59,25 @@ export class UI {
     this.mpScreen?.classList.add('hidden');
     this.mpResult?.classList.add('hidden');
     this.leaderboard?.classList.add('hidden');
+    this.demoBanner?.classList.add('hidden');
     this.hud.classList.add('hidden');
   }
 
   showTitle() {
     this.hideAllOverlays();
     this.title.classList.remove('hidden');
+  }
+
+  showDemo(stage) {
+    this.hideAllOverlays();
+    this.hud.classList.remove('hidden');
+    this.demoBanner?.classList.remove('hidden');
+    this.sizeGoal.textContent = 'Watch & grow';
+    this.stageName.textContent = `${stage.name} · Demo`;
+    if (this.mpRosterHud) {
+      this.mpRosterHud.classList.add('hidden');
+      this.mpRosterHud.innerHTML = '';
+    }
   }
 
   /**

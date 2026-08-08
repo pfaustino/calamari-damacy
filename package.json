@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:itch": "vite build --base=./",
     "preview": "vite preview",
     "smoke": "node scripts/smoke-check.mjs",
     "check": "npm run smoke && npm run build",
+    "check:itch": "npm run smoke && npm run build:itch",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },

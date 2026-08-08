@@ -1,0 +1,54 @@
+name: Deploy to itch.io
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: itch
+  cancel-in-progress: true
+
+jobs:
+  deploy-itch:
+    runs-on: ubuntu-latest
+    environment:
+      name: itch
+      url: https://pfaustino.itch.io/calamari-damacy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Quality check (itch build)
+        env:
+          VITE_LEADERBOARD_WRITE_KEY: ${{ secrets.VITE_LEADERBOARD_WRITE_KEY }}
+        run: npm run check:itch
+
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Download butler
+        run: |
+          curl -L -o butler.zip "https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default"
+          unzip -q butler.zip
+          chmod +x butler
+          ./butler -V
+
+      - name: Push to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          ./butler push dist pfaustino/calamari-damacy:html5 --userversion "${{ steps.version.outputs.version }}"

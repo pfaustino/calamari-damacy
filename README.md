@@ -2,7 +2,7 @@
 
 A browser-based **Katamari Damacy**-inspired roller. Stick objects to your growing calamari ball, hit the size goal before time runs out.
 
-**Play:** [pfaustino.github.io/calamari-damacy](https://pfaustino.github.io/calamari-damacy/)
+**Play:** [GitHub Pages](https://pfaustino.github.io/calamari-damacy/) · [itch.io](https://pfaustino.itch.io/calamari-damacy)
 
 ## Play locally
 

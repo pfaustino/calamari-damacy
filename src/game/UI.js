@@ -532,7 +532,7 @@ export class UI {
           ? kingLine
           : mode === 'collect'
             ? `Keep hunting ${collectType}s.`
-            : 'Keep rolling — anything smaller than you sticks.';
+            : 'Keep rolling — grow enough and bigger junk will stick.';
       this.resultPrimary.textContent = 'Try Again';
     }
     this.resultStats.textContent =
